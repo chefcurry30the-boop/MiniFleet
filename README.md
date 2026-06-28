@@ -123,7 +123,7 @@ On **each** Mac you want running agents:
 ```bash
 ./scripts/detect-device.sh   # see suggested name
 
-git clone <this-repo> ~/minifleet
+git clone https://github.com/chefcurry30the-boop/MiniFleet.git ~/minifleet
 cd ~/minifleet
 
 # Mac Mini example:
