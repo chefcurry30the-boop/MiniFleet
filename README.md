@@ -101,8 +101,8 @@ Detailed walkthroughs — start here if you're wiring up real machines:
 
 | Guide | When to use |
 |-------|-------------|
-| **[docs/SETUP-TWO-MACS.md](docs/SETUP-TWO-MACS.md)** | Mac Mini (head) + MacBook — the most common first setup |
-| **[docs/SETUP-MAC-MINIS.md](docs/SETUP-MAC-MINIS.md)** | Multiple always-on Mac Minis — scale to a full fleet |
+| **[docs/SETUP-TWO-MACS.md](docs/SETUP-TWO-MACS.md)** | Two MacBooks — test the full flow before scaling up |
+| **[docs/SETUP-MAC-MINIS.md](docs/SETUP-MAC-MINIS.md)** | 5 always-on Mac Minis + your MacBook as control surface |
 | **[docs/WORKFLOW.md](docs/WORKFLOW.md)** | What happens after you assign a job (loops, guardrails, multi-agent) |
 
 ## Quick start
@@ -119,7 +119,7 @@ Detailed walkthroughs — start here if you're wiring up real machines:
 
 Usually a Mac Mini or Mac Studio that's always on. Can also run on your MacBook for testing.
 
-**Full walkthrough:** [docs/SETUP-TWO-MACS.md](docs/SETUP-TWO-MACS.md) (2 Macs) · [docs/SETUP-MAC-MINIS.md](docs/SETUP-MAC-MINIS.md) (fleet of minis)
+**Full walkthrough:** [docs/SETUP-TWO-MACS.md](docs/SETUP-TWO-MACS.md) (2 MacBooks) · [docs/SETUP-MAC-MINIS.md](docs/SETUP-MAC-MINIS.md) (5 minis + MacBook)
 
 ```bash
 git clone https://github.com/chefcurry30the-boop/MiniFleet.git ~/MiniFleet
@@ -259,5 +259,5 @@ See **[docs/WORKFLOW.md](docs/WORKFLOW.md)** for the complete lifecycle when a j
 
 ## Setup guides (detailed)
 
-- **[Connecting two Macs](docs/SETUP-TWO-MACS.md)** — Mac Mini head + MacBook laptop, step by step
-- **[Mac Mini fleet](docs/SETUP-MAC-MINIS.md)** — coordinator + multiple workers, GitHub, Remote Control, monitoring
+- **[Connecting two MacBooks](docs/SETUP-TWO-MACS.md)** — MacBook A (head) + MacBook B (worker)
+- **[Mac Mini fleet](docs/SETUP-MAC-MINIS.md)** — 5 Mac Minis running + MacBook connects to dashboard

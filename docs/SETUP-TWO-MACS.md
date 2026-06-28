@@ -1,77 +1,79 @@
-# Connect two Macs to MiniFleet
+# Connect two MacBooks to MiniFleet
 
-Step-by-step guide for the most common setup: **one always-on Mac** (coordinator + worker) and **one laptop** (control surface + optional worker).
+Step-by-step guide for **two MacBooks** on the same network — one runs the coordinator, both can run agents.
 
 Typical layout:
 
 ```
-Mac Mini (head)          MacBook (laptop)
-├─ Coordinator :8787     ├─ CLI: minifleet assign
-├─ Worker daemon         ├─ Browser: dashboard
-└─ Claude Code agents    └─ Optional worker while docked
+MacBook A (home / docked)       MacBook B (portable)
+├─ Coordinator :8787            ├─ Worker daemon
+├─ Worker daemon                └─ Claude Code agents
+├─ Claude Code agents
+└─ Dashboard always reachable
 ```
 
-Both Macs must be on the **same network** (same Wi‑Fi or Ethernet). Bonjour `.local` hostnames must resolve between them.
+Use this when you don't have Mac Minis yet — two laptops is enough to test the full flow before scaling up.
+
+Both MacBooks must be on the **same network** (same Wi‑Fi). Bonjour `.local` hostnames must resolve between them.
 
 ---
 
 ## What you need
 
-| Item | Mac Mini (head) | MacBook (laptop) |
-|------|-----------------|------------------|
+| Item | MacBook A (head) | MacBook B |
+|------|------------------|-----------|
 | macOS | Any recent version | Any recent version |
-| Python | 3.11+ (`python3 --version`) | 3.11+ |
-| Claude Code | Installed + logged in (`claude` → `/login`) | Same |
-| Network | Ethernet or Wi‑Fi, always on | Same Wi‑Fi as head Mac |
-| Role | Coordinator + worker | CLI + dashboard (optional worker) |
+| Python | 3.11+ | 3.11+ |
+| Claude Code | Installed + `/login` | Same |
+| Network | Same Wi‑Fi as MacBook B | Same Wi‑Fi as MacBook A |
+| Role | Coordinator + worker | Worker |
+| Power | Plugged in, lid open or "don't sleep on power" | Plugged in while running jobs |
+
+Pick **MacBook A** as the head — usually the one that stays home, on a desk, or plugged in most often.
 
 ---
 
 ## Step 1 — Note hostnames
 
-On **each** Mac, run:
+On **each** MacBook, run:
 
 ```bash
 hostname -s
 ```
 
-Example output:
+Example:
 
-| Mac | `hostname -s` | Dashboard / coordinator URL |
-|-----|---------------|-----------------------------|
-| Mac Mini | `buildwrights-mac-mini` | `http://buildwrights-mac-mini.local:8787` |
-| MacBook | `buildwrights-macbook` | (client only — points at head Mac) |
+| MacBook | `hostname -s` | URL |
+|---------|---------------|-----|
+| MacBook A (head) | `janes-macbook-pro` | `http://janes-macbook-pro.local:8787` |
+| MacBook B | `janes-macbook-air` | (worker — points at MacBook A) |
 
-Write down the **head Mac's** short hostname. You'll use it everywhere as `YOUR-HEAD-MAC`.
+Write down MacBook A's hostname as `YOUR-HEAD-MAC`.
 
-**Test connectivity** from the MacBook:
+**Test from MacBook B:**
 
 ```bash
-ping -c 2 buildwrights-mac-mini.local
-curl -s http://buildwrights-mac-mini.local:8787/api/health || echo "not up yet"
+ping -c 2 janes-macbook-pro.local
+curl -s http://janes-macbook-pro.local:8787/api/health || echo "not up yet"
 ```
 
-If `ping` fails, fix networking first (same subnet, firewall, etc.) before continuing.
+If `ping` fails, fix Wi‑Fi / firewall before continuing.
 
 ---
 
-## Step 2 — Set up the head Mac (Mac Mini)
+## Step 2 — Set up MacBook A (coordinator)
 
-SSH into the Mac Mini or sit at it directly.
+On the MacBook that will be the head node.
 
-### 2a. Install prerequisites
+### 2a. Prerequisites
 
 ```bash
-# Claude Code
-# https://code.claude.com — then:
 claude --version
 claude   # run once, type /login if needed
-
-# Python 3.11+
 python3 --version
 ```
 
-### 2b. Clone MiniFleet and install coordinator
+### 2b. Install coordinator
 
 ```bash
 git clone https://github.com/chefcurry30the-boop/MiniFleet.git ~/MiniFleet
@@ -80,8 +82,6 @@ pip3 install -e .
 ./scripts/setup-coordinator.sh
 ```
 
-The script installs a **launchd** service that starts on login and keeps running.
-
 Verify:
 
 ```bash
@@ -89,207 +89,164 @@ curl -s http://127.0.0.1:8787/api/health
 open "http://$(hostname -s).local:8787"
 ```
 
-You should see the MiniFleet dashboard.
-
-### 2c. Install worker on the same Mac (recommended)
-
-The head Mac can also run agents:
+### 2c. Worker on MacBook A
 
 ```bash
 cd ~/MiniFleet
 ./scripts/detect-device.sh
 
-MINIFLEET_NODE_NAME=mac-mini-1 \
+MINIFLEET_NODE_NAME=macbook-a \
 MINIFLEET_COORDINATOR=http://127.0.0.1:8787 \
 ./scripts/setup-worker.sh
 ```
 
-Using `127.0.0.1` is fine on the coordinator machine itself.
+### 2d. Prevent sleep (important for a laptop head node)
 
-Check logs:
+System Settings → Battery → **Prevent automatic sleeping when display is off** (when on power adapter).
 
-```bash
-tail -f ~/.minifleet/worker.log
-```
-
-### 2d. (Optional) GitHub auth on the head Mac
-
-If jobs will touch private repos:
+Or from terminal:
 
 ```bash
-cd ~/MiniFleet
-./scripts/setup-github.sh --ssh
-# Add the printed deploy key to GitHub → repo → Settings → Deploy keys
+sudo pmset -c sleep 0 disksleep 0
 ```
 
 ---
 
-## Step 3 — Set up your MacBook
+## Step 3 — Set up MacBook B (worker)
 
-### 3a. Clone and install CLI only
-
-You don't need the coordinator on the laptop — just the CLI to assign jobs:
+On the second MacBook.
 
 ```bash
 git clone https://github.com/chefcurry30the-boop/MiniFleet.git ~/MiniFleet
 cd ~/MiniFleet
 pip3 install -e .
-```
-
-### 3b. Point CLI at the head Mac
-
-Replace `buildwrights-mac-mini` with your head Mac's hostname:
-
-```bash
-export MINIFLEET_COORDINATOR=http://buildwrights-mac-mini.local:8787
-```
-
-Add to `~/.zshrc` so it persists:
-
-```bash
-echo 'export MINIFLEET_COORDINATOR=http://buildwrights-mac-mini.local:8787' >> ~/.zshrc
-source ~/.zshrc
-```
-
-### 3c. Verify connection
-
-```bash
-minifleet nodes
-minifleet dashboard   # opens browser to head Mac dashboard
-```
-
-You should see `mac-mini-1` (or whatever you named the worker) as **online**.
-
-### 3d. (Optional) MacBook as a worker while docked
-
-If you want the laptop to also claim jobs:
-
-```bash
-cd ~/MiniFleet
 ./scripts/detect-device.sh
 
-MINIFLEET_NODE_NAME=macbook-pro \
-MINIFLEET_COORDINATOR=http://buildwrights-mac-mini.local:8787 \
+# Replace with MacBook A's hostname
+MINIFLEET_NODE_NAME=macbook-b \
+MINIFLEET_COORDINATOR=http://janes-macbook-pro.local:8787 \
 ./scripts/setup-worker.sh
 ```
 
-When unplugged, you can leave it running if the MacBook is configured not to sleep on power. Otherwise stop the worker:
+Verify from MacBook B:
 
 ```bash
-launchctl bootout "gui/$(id -u)/com.minifleet.worker"
+export MINIFLEET_COORDINATOR=http://janes-macbook-pro.local:8787
+minifleet nodes
+```
+
+You should see both `macbook-a` and `macbook-b` online.
+
+---
+
+## Step 4 — CLI on both MacBooks (optional but handy)
+
+On **either** MacBook, set the coordinator URL permanently:
+
+```bash
+echo 'export MINIFLEET_COORDINATOR=http://janes-macbook-pro.local:8787' >> ~/.zshrc
+source ~/.zshrc
+```
+
+Now both laptops can assign jobs and open the dashboard:
+
+```bash
+minifleet dashboard
+minifleet nodes
 ```
 
 ---
 
-## Step 4 — Register a repo (optional)
+## Step 5 — Register a repo (optional)
 
-On the **head Mac** or from the **MacBook CLI** (with `MINIFLEET_COORDINATOR` set):
+From either MacBook (with `MINIFLEET_COORDINATOR` set):
 
 ```bash
 minifleet repo add my-app git@github.com:your-org/your-repo.git --branch main
-minifleet repo list
 ```
 
-Or use the dashboard sidebar → **Add repo**.
+Run GitHub auth on **both** MacBooks if they'll pull private repos:
 
-Every worker Mac that runs jobs against `my-app` needs GitHub auth (`./scripts/setup-github.sh`).
+```bash
+cd ~/MiniFleet
+./scripts/setup-github.sh --ssh
+```
 
 ---
 
-## Step 5 — Assign your first job
+## Step 6 — Assign your first job
 
-From the MacBook:
+From MacBook B while both are on the same Wi‑Fi:
 
 ```bash
-minifleet assign "List the top 3 files in this repo and summarize what the project does" \
-  --node mac-mini-1 \
+minifleet assign "Summarize this repo in 3 bullet points" \
+  --node macbook-a \
   --repo my-app \
   --title "Smoke test"
 ```
 
-Watch progress:
+Watch on the dashboard (`minifleet dashboard`) — you'll see the job on `macbook-a`.
+
+Try pinning to the other laptop:
 
 ```bash
-minifleet status
+minifleet assign "Run the test suite and report failures" \
+  --node macbook-b \
+  --repo my-app \
+  --title "Test run"
 ```
 
-Or open the dashboard on the head Mac — you'll see the job card with loop iteration progress.
-
-**Unplug the laptop.** The Mac Mini keeps running the job. When you reconnect:
-
-```bash
-minifleet status
-open http://buildwrights-mac-mini.local:8787
-```
+**Close MacBook B's lid and walk away** — as long as MacBook A is awake and on power, the coordinator and any jobs on MacBook A keep running. Jobs on MacBook B stop if that machine sleeps.
 
 ---
 
-## Step 6 — Daily workflow
+## Step 7 — Daily workflow
 
 | Action | Command |
 |--------|---------|
-| Queue work | `minifleet assign "..." --node mac-mini-1 --repo my-app` |
+| Queue work on MacBook A | `minifleet assign "..." --node macbook-a --repo my-app` |
+| Queue work on MacBook B | `minifleet assign "..." --node macbook-b --repo my-app` |
+| Let either pick it up | `minifleet assign "..." --repo my-app` (omit `--node`) |
 | Check fleet | `minifleet status` or dashboard |
-| See which Macs are up | `minifleet nodes` |
-| Steer from phone | `minifleet assign "..." --remote` or Remote Control hub |
-| View agent logs | `tail -f ~/.minifleet/logs/<agent-id>.log` (on the worker Mac) |
+| Steer from phone | `minifleet assign "..." --remote` |
 
 ---
 
 ## Troubleshooting
 
-### Worker shows offline on dashboard
+### MacBook B can't reach coordinator
 
-On the worker Mac:
+- MacBook A must be awake, on Wi‑Fi, and not sleeping
+- `ping YOUR-HEAD-MAC.local` from MacBook B
+- Check firewall on MacBook A (allow port 8787)
 
-```bash
-tail -50 ~/.minifleet/worker.log
-launchctl kickstart -k "gui/$(id -u)/com.minifleet.worker"
-```
+### Worker offline after closing lid
 
-Check `MINIFLEET_COORDINATOR` in the plist:
+Laptops sleep when closed unless configured otherwise. For reliable workers:
 
-```bash
-plutil -p ~/Library/LaunchAgents/com.minifleet.worker.plist | grep COORDINATOR
-```
+- Keep plugged in with "prevent sleep on power"
+- Or use MacBook A as the only worker and MacBook B purely for CLI
 
-### Can't reach dashboard from MacBook
+### Coordinator dies when MacBook A sleeps
 
-1. Confirm head Mac is awake and on the network
-2. `ping YOUR-HEAD-MAC.local` from MacBook
-3. On head Mac: System Settings → Network → Firewall — allow incoming on port 8787, or disable firewall temporarily to test
-4. Coordinator logs: `tail -50 ~/.minifleet/coordinator.log`
-
-### Claude Code not found on worker
-
-```bash
-which claude
-# If missing, install from https://code.claude.com
-# Then restart worker:
-launchctl kickstart -k "gui/$(id -u)/com.minifleet.worker"
-```
-
-### Jobs stuck in queued
-
-- Worker must be **online** (`minifleet nodes`)
-- If you used `--node mac-mini-1`, that exact node must be registered
-- Check worker isn't at concurrency cap (`MINIFLEET_MAX_CONCURRENT`)
+The head node must stay awake. A Mac Mini fleet is better for 24/7 — see **[SETUP-MAC-MINIS.md](SETUP-MAC-MINIS.md)**.
 
 ---
 
-## Uninstall / reset
+## Uninstall
+
+On each MacBook:
 
 ```bash
-launchctl bootout "gui/$(id -u)/com.minifleet.coordinator"
-launchctl bootout "gui/$(id -u)/com.minifleet.worker"
-rm ~/Library/LaunchAgents/com.minifleet.coordinator.plist
-rm ~/Library/LaunchAgents/com.minifleet.worker.plist
-# Data (optional): rm -rf ~/.minifleet
+launchctl bootout "gui/$(id -u)/com.minifleet.coordinator" 2>/dev/null || true
+launchctl bootout "gui/$(id -u)/com.minifleet.worker" 2>/dev/null || true
+rm -f ~/Library/LaunchAgents/com.minifleet.coordinator.plist
+rm -f ~/Library/LaunchAgents/com.minifleet.worker.plist
 ```
 
 ---
 
 ## Next steps
 
-- **[SETUP-MAC-MINIS.md](SETUP-MAC-MINIS.md)** — add more Mac Minis to the fleet
-- **[WORKFLOW.md](WORKFLOW.md)** — how jobs run (loop phases, guardrails, multi-agent)
+- **[SETUP-MAC-MINIS.md](SETUP-MAC-MINIS.md)** — graduate to 5 always-on Mac Minis + your MacBook as control surface
+- **[WORKFLOW.md](WORKFLOW.md)** — how jobs run (loops, guardrails, multi-agent)
