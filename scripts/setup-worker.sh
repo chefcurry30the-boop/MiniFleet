@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Install MiniFleet worker on any Mac (Mini, MacBook, Studio, iMac, etc.)
-# Usage: MINIFLEET_NODE_NAME=macbook-pro MINIFLEET_COORDINATOR=http://head.local:8787 ./scripts/setup-worker.sh
+# Usage: MINIFLEET_NODE_NAME=macbook-pro MINIFLEET_COORDINATOR=http://YOUR-HEAD-MAC.local:8787 ./scripts/setup-worker.sh
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DATA_DIR="${MINIFLEET_DATA:-$HOME/.minifleet}"

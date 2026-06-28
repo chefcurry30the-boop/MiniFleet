@@ -9,7 +9,7 @@ This document describes the **entire lifecycle** of a job from assignment to com
 ```
 ┌──────────────┐     assign job      ┌─────────────────────┐
 │ Laptop /     │ ─────────────────► │ Coordinator         │
-│ Dashboard    │ ◄───────────────── │ (head Mac Mini :8787)│
+│ Dashboard    │ ◄───────────────── │ (head Mac :8787)     │
 └──────────────┘   dashboard/API    │ SQLite fleet.db     │
                                     └──────────┬──────────┘
                                                │
@@ -193,7 +193,7 @@ summary="Fixed triage.ts ... (5 iterations, $0.75 est., completed)"
 
 ### 8. You reconnect (laptop unplugged is fine)
 
-Open dashboard: `http://mac-head.local:8787`
+Open dashboard: `http://YOUR-HEAD-MAC.local:8787` (hostname of the coordinator Mac)
 
 See:
 ```

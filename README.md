@@ -86,7 +86,7 @@ The worker pulls latest `main` from your private GitHub, then runs Claude Code i
 
 ## Dashboard
 
-Open `http://mac-head.local:8787` (or `minifleet dashboard`).
+Open `http://YOUR-HEAD-MAC.local:8787` (replace with your coordinator's hostname — run `hostname` on the head Mac) or `minifleet dashboard`.
 
 The dashboard shows:
 - **Fleet totals** — running / done / queued / failed
@@ -94,6 +94,16 @@ The dashboard shows:
 - **Repo registry** — your private repos + add form
 - **Assign panel** — queue Claude Code jobs from the browser
 - **Per-machine cards** — device type (MacBook / Mac Mini), agent counts, repo sync, live jobs
+
+## Setup guides
+
+Detailed walkthroughs — start here if you're wiring up real machines:
+
+| Guide | When to use |
+|-------|-------------|
+| **[docs/SETUP-TWO-MACS.md](docs/SETUP-TWO-MACS.md)** | Mac Mini (head) + MacBook — the most common first setup |
+| **[docs/SETUP-MAC-MINIS.md](docs/SETUP-MAC-MINIS.md)** | Multiple always-on Mac Minis — scale to a full fleet |
+| **[docs/WORKFLOW.md](docs/WORKFLOW.md)** | What happens after you assign a job (loops, guardrails, multi-agent) |
 
 ## Quick start
 
@@ -109,12 +119,16 @@ The dashboard shows:
 
 Usually a Mac Mini or Mac Studio that's always on. Can also run on your MacBook for testing.
 
+**Full walkthrough:** [docs/SETUP-TWO-MACS.md](docs/SETUP-TWO-MACS.md) (2 Macs) · [docs/SETUP-MAC-MINIS.md](docs/SETUP-MAC-MINIS.md) (fleet of minis)
+
 ```bash
-cd "mac mini thingy"
+git clone https://github.com/chefcurry30the-boop/MiniFleet.git ~/MiniFleet
+cd ~/MiniFleet
+pip3 install -e .
 ./scripts/setup-coordinator.sh
 ```
 
-Dashboard: `http://mac-head.local:8787`
+Dashboard: `http://YOUR-HEAD-MAC.local:8787` — on the head Mac, run `hostname -s` to get the name (e.g. `buildwrights-mac-mini`)
 
 ### 3. Worker machines (Mac Minis, MacBooks, etc.)
 
@@ -123,17 +137,21 @@ On **each** Mac you want running agents:
 ```bash
 ./scripts/detect-device.sh   # see suggested name
 
-git clone https://github.com/chefcurry30the-boop/MiniFleet.git ~/minifleet
-cd ~/minifleet
+git clone https://github.com/chefcurry30the-boop/MiniFleet.git ~/MiniFleet
+cd ~/MiniFleet
+pip3 install -e .
+
+# Replace YOUR-HEAD-MAC with the head Mac's hostname (run `hostname` on that machine)
+HEAD=http://YOUR-HEAD-MAC.local:8787
 
 # Mac Mini example:
 MINIFLEET_NODE_NAME=mac-mini-1 \
-MINIFLEET_COORDINATOR=http://mac-head.local:8787 \
+MINIFLEET_COORDINATOR=$HEAD \
 ./scripts/setup-worker.sh
 
 # MacBook example:
 MINIFLEET_NODE_NAME=macbook-pro \
-MINIFLEET_COORDINATOR=http://mac-head.local:8787 \
+MINIFLEET_COORDINATOR=$HEAD \
 ./scripts/setup-worker.sh
 ```
 
@@ -150,8 +168,9 @@ Then open [claude.ai/code](https://claude.ai/code) and look for sessions prefixe
 ### 4. From your laptop
 
 ```bash
+cd ~/MiniFleet
 pip install -e .
-export MINIFLEET_COORDINATOR=http://mac-head.local:8787
+export MINIFLEET_COORDINATOR=http://YOUR-HEAD-MAC.local:8787
 
 # Queue a Claude Code job
 minifleet assign "Fix the triage bug and run smoke tests" \
@@ -237,3 +256,8 @@ open http://127.0.0.1:8787
 ## Full job workflow
 
 See **[docs/WORKFLOW.md](docs/WORKFLOW.md)** for the complete lifecycle when a job is assigned — loop phases, multi-agent, guardrails, and diagrams.
+
+## Setup guides (detailed)
+
+- **[Connecting two Macs](docs/SETUP-TWO-MACS.md)** — Mac Mini head + MacBook laptop, step by step
+- **[Mac Mini fleet](docs/SETUP-MAC-MINIS.md)** — coordinator + multiple workers, GitHub, Remote Control, monitoring

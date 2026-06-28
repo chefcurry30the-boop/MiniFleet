@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Install MiniFleet coordinator on the head Mac Mini (or your laptop while testing).
+# Install MiniFleet coordinator on the head Mac (or your MacBook while testing).
 # Usage: ./scripts/setup-coordinator.sh
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
