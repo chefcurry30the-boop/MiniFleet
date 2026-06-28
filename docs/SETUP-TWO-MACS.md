@@ -45,16 +45,16 @@ Example:
 
 | MacBook | `hostname -s` | URL |
 |---------|---------------|-----|
-| MacBook A (head) | `janes-macbook-pro` | `http://janes-macbook-pro.local:8787` |
-| MacBook B | `janes-macbook-air` | (worker — points at MacBook A) |
+| MacBook A (head) | `macbook-head` | `http://macbook-head.local:8787` |
+| MacBook B | `macbook-b` | (worker — points at MacBook A) |
 
 Write down MacBook A's hostname as `YOUR-HEAD-MAC`.
 
 **Test from MacBook B:**
 
 ```bash
-ping -c 2 janes-macbook-pro.local
-curl -s http://janes-macbook-pro.local:8787/api/health || echo "not up yet"
+ping -c 2 macbook-head.local
+curl -s http://macbook-head.local:8787/api/health || echo "not up yet"
 ```
 
 If `ping` fails, fix Wi‑Fi / firewall before continuing.
@@ -124,14 +124,14 @@ pip3 install -e .
 
 # Replace with MacBook A's hostname
 MINIFLEET_NODE_NAME=macbook-b \
-MINIFLEET_COORDINATOR=http://janes-macbook-pro.local:8787 \
+MINIFLEET_COORDINATOR=http://macbook-head.local:8787 \
 ./scripts/setup-worker.sh
 ```
 
 Verify from MacBook B:
 
 ```bash
-export MINIFLEET_COORDINATOR=http://janes-macbook-pro.local:8787
+export MINIFLEET_COORDINATOR=http://macbook-head.local:8787
 minifleet nodes
 ```
 
@@ -144,7 +144,7 @@ You should see both `macbook-a` and `macbook-b` online.
 On **either** MacBook, set the coordinator URL permanently:
 
 ```bash
-echo 'export MINIFLEET_COORDINATOR=http://janes-macbook-pro.local:8787' >> ~/.zshrc
+echo 'export MINIFLEET_COORDINATOR=http://macbook-head.local:8787' >> ~/.zshrc
 source ~/.zshrc
 ```
 

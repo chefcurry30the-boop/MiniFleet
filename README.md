@@ -128,7 +128,7 @@ pip3 install -e .
 ./scripts/setup-coordinator.sh
 ```
 
-Dashboard: `http://YOUR-HEAD-MAC.local:8787` — on the head Mac, run `hostname -s` to get the name (e.g. `buildwrights-mac-mini`)
+Dashboard: `http://YOUR-HEAD-MAC.local:8787` — on the head Mac, run `hostname -s` to get the name (e.g. `mac-mini-head`)
 
 ### 3. Worker machines (Mac Minis, MacBooks, etc.)
 
