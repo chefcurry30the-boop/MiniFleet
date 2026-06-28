@@ -129,6 +129,20 @@ class Database:
             conn.execute("ALTER TABLE nodes ADD COLUMN remote_control INTEGER NOT NULL DEFAULT 0")
         if "device_type" not in node_columns:
             conn.execute("ALTER TABLE nodes ADD COLUMN device_type TEXT NOT NULL DEFAULT 'mac'")
+        if "cpu_percent" not in node_columns:
+            conn.execute("ALTER TABLE nodes ADD COLUMN cpu_percent REAL")
+        if "memory_percent" not in node_columns:
+            conn.execute("ALTER TABLE nodes ADD COLUMN memory_percent REAL")
+        if "disk_percent" not in node_columns:
+            conn.execute("ALTER TABLE nodes ADD COLUMN disk_percent REAL")
+        if "claude_version" not in node_columns:
+            conn.execute("ALTER TABLE nodes ADD COLUMN claude_version TEXT")
+
+        agent_columns = {row[1] for row in conn.execute("PRAGMA table_info(agents)").fetchall()}
+        if "cancel_requested" not in agent_columns:
+            conn.execute("ALTER TABLE agents ADD COLUMN cancel_requested INTEGER NOT NULL DEFAULT 0")
+        if "git_branch" not in agent_columns:
+            conn.execute("ALTER TABLE agents ADD COLUMN git_branch TEXT")
 
     def upsert_node(
         self,
@@ -166,16 +180,29 @@ class Database:
         assert node is not None
         return node
 
-    def heartbeat_node(self, node_id: str, ip: Optional[str] = None) -> None:
+    def heartbeat_node(
+        self,
+        node_id: str,
+        *,
+        ip: Optional[str] = None,
+        cpu_percent: Optional[float] = None,
+        memory_percent: Optional[float] = None,
+        disk_percent: Optional[float] = None,
+        claude_version: Optional[str] = None,
+    ) -> None:
         now = utcnow().isoformat()
         with self.connect() as conn:
             conn.execute(
                 """
                 UPDATE nodes
-                SET last_seen = ?, status = 'online', ip = COALESCE(?, ip)
+                SET last_seen = ?, status = 'online', ip = COALESCE(?, ip),
+                    cpu_percent = COALESCE(?, cpu_percent),
+                    memory_percent = COALESCE(?, memory_percent),
+                    disk_percent = COALESCE(?, disk_percent),
+                    claude_version = COALESCE(?, claude_version)
                 WHERE id = ?
                 """,
-                (now, ip, node_id),
+                (now, ip, cpu_percent, memory_percent, disk_percent, claude_version, node_id),
             )
 
     def mark_stale_nodes_offline(self, stale_seconds: int = 90) -> None:
@@ -420,6 +447,7 @@ class Database:
                 FROM agents a
                 LEFT JOIN nodes n ON n.id = a.node_id
                 WHERE a.status = 'queued'
+                  AND a.cancel_requested = 0
                   AND (a.node_id IS NULL OR a.node_id = ?)
                 ORDER BY a.created_at ASC
                 LIMIT 1
@@ -452,6 +480,8 @@ class Database:
         max_iterations: Optional[int] = None,
         loop_phase: Optional[str] = None,
         estimated_cost_usd: Optional[float] = None,
+        cancel_requested: Optional[bool] = None,
+        git_branch: Optional[str] = None,
     ) -> Optional[Agent]:
         now = utcnow().isoformat()
         with self.connect() as conn:
@@ -484,6 +514,12 @@ class Database:
             if estimated_cost_usd is not None:
                 fields.append("estimated_cost_usd = ?")
                 params.append(estimated_cost_usd)
+            if cancel_requested is not None:
+                fields.append("cancel_requested = ?")
+                params.append(int(cancel_requested))
+            if git_branch is not None:
+                fields.append("git_branch = ?")
+                params.append(git_branch)
             if not fields:
                 return self.get_agent(agent_id)
             params.append(agent_id)
@@ -492,6 +528,35 @@ class Database:
                 params,
             )
         return self.get_agent(agent_id)
+
+    def cancel_agent(self, agent_id: str) -> Optional[Agent]:
+        agent = self.get_agent(agent_id)
+        if not agent:
+            return None
+        if agent.status in (AgentStatus.COMPLETED, AgentStatus.FAILED, AgentStatus.CANCELLED):
+            return agent
+        if agent.status == AgentStatus.QUEUED:
+            return self.update_agent(agent_id, status=AgentStatus.CANCELLED, cancel_requested=True)
+        return self.update_agent(agent_id, cancel_requested=True)
+
+    def append_agent_log(self, agent_id: str, chunk: str, logs_dir: Path) -> int:
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        path = logs_dir / f"{agent_id}.log"
+        with path.open("a", encoding="utf-8") as f:
+            f.write(chunk)
+        return path.stat().st_size
+
+    def read_agent_log(self, agent_id: str, logs_dir: Path, offset: int = 0) -> tuple[str, int, int]:
+        path = logs_dir / f"{agent_id}.log"
+        if not path.exists():
+            return "", 0, 0
+        data = path.read_text(encoding="utf-8", errors="replace")
+        size = len(data)
+        if offset < 0:
+            offset = 0
+        if offset > size:
+            offset = size
+        return data[offset:], offset, size
 
     def dashboard_stats(self) -> dict:
         self.mark_stale_nodes_offline()
@@ -580,6 +645,10 @@ class Database:
             status=NodeStatus(row["status"]),
             last_seen=parse_dt(row["last_seen"]) or utcnow(),
             ip=row["ip"],
+            cpu_percent=row["cpu_percent"] if "cpu_percent" in keys else None,
+            memory_percent=row["memory_percent"] if "memory_percent" in keys else None,
+            disk_percent=row["disk_percent"] if "disk_percent" in keys else None,
+            claude_version=row["claude_version"] if "claude_version" in keys else None,
         )
 
     @staticmethod
@@ -610,6 +679,8 @@ class Database:
             loop_phase=row["loop_phase"] if "loop_phase" in keys else None,
             estimated_cost_usd=float(row["estimated_cost_usd"]) if "estimated_cost_usd" in keys else 0.0,
             multi_agent=bool(row["multi_agent"]) if "multi_agent" in keys else False,
+            cancel_requested=bool(row["cancel_requested"]) if "cancel_requested" in keys else False,
+            git_branch=row["git_branch"] if "git_branch" in keys else None,
             created_at=parse_dt(row["created_at"]) or utcnow(),
             started_at=parse_dt(row["started_at"]),
             completed_at=parse_dt(row["completed_at"]),

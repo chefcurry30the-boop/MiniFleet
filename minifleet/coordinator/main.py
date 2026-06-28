@@ -1,25 +1,42 @@
+import asyncio
+import json
 import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from minifleet.db import Database
-from minifleet.models import AgentCreate, AgentStatus, AgentUpdate, NodeRegister, NodeRepoStatusReport, RepoCreate
+from minifleet.models import AgentCreate, AgentStatus, AgentUpdate, NodeHeartbeat, NodeRegister, NodeRepoStatusReport, RepoCreate
 from minifleet.loop.config import LoopConfig
+from minifleet.notifications import notify_agent_event
 
 DATA_DIR = Path(os.environ.get("MINIFLEET_DATA", Path.home() / ".minifleet"))
 DB_PATH = DATA_DIR / "fleet.db"
-DASHBOARD_DIR = Path(__file__).resolve().parent.parent / "dashboard"
+LOGS_DIR = DATA_DIR / "logs"
+DASHBOARD_DIR = Path(__file__).resolve().parent.parent.parent / "dashboard"
 
 db = Database(DB_PATH)
-app = FastAPI(title="MiniFleet", version="0.1.0")
+app = FastAPI(title="MiniFleet", version="0.2.0")
+
+
+class LogAppend(BaseModel):
+    chunk: str
+    offset: int = 0
 
 
 @app.on_event("startup")
 def startup() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _notify_if_terminal(agent: dict, previous_status: str | None = None) -> None:
+    status = agent.get("status")
+    if status in ("completed", "failed", "cancelled") and status != previous_status:
+        notify_agent_event(event=status, agent=agent, node_name=agent.get("node_name"))
 
 
 @app.get("/api/health")
@@ -30,7 +47,7 @@ def health() -> dict:
 @app.post("/api/nodes/register")
 def register_node(payload: NodeRegister, request: Request) -> dict:
     ip = request.client.host if request.client else None
-    node =     db.upsert_node(
+    node = db.upsert_node(
         name=payload.name,
         hostname=payload.hostname,
         max_concurrent=payload.max_concurrent,
@@ -41,12 +58,20 @@ def register_node(payload: NodeRegister, request: Request) -> dict:
 
 
 @app.post("/api/nodes/{node_id}/heartbeat")
-def heartbeat(node_id: str, request: Request) -> dict:
+def heartbeat(node_id: str, request: Request, payload: NodeHeartbeat | None = None) -> dict:
     node = db.get_node(node_id)
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
     ip = request.client.host if request.client else None
-    db.heartbeat_node(node_id, ip=ip)
+    health = payload or NodeHeartbeat()
+    db.heartbeat_node(
+        node_id,
+        ip=ip,
+        cpu_percent=health.cpu_percent,
+        memory_percent=health.memory_percent,
+        disk_percent=health.disk_percent,
+        claude_version=health.claude_version,
+    )
     return {"ok": True}
 
 
@@ -106,6 +131,65 @@ def get_agent(agent_id: str) -> dict:
     return agent.model_dump(mode="json")
 
 
+@app.post("/api/agents/{agent_id}/cancel")
+def cancel_agent(agent_id: str) -> dict:
+    existing = db.get_agent(agent_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    previous = existing.status.value
+    agent = db.cancel_agent(agent_id)
+    assert agent is not None
+    data = agent.model_dump(mode="json")
+    _notify_if_terminal(data, previous)
+    return data
+
+
+@app.post("/api/agents/{agent_id}/logs")
+def append_agent_log(agent_id: str, payload: LogAppend) -> dict:
+    agent = db.get_agent(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    size = db.append_agent_log(agent_id, payload.chunk, LOGS_DIR)
+    return {"ok": True, "size": size}
+
+
+@app.get("/api/agents/{agent_id}/logs")
+def get_agent_logs(agent_id: str, offset: int = 0) -> dict:
+    agent = db.get_agent(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    content, start, size = db.read_agent_log(agent_id, LOGS_DIR, offset)
+    return {"content": content, "offset": start + len(content), "size": size}
+
+
+@app.get("/api/agents/{agent_id}/logs/stream")
+async def stream_agent_logs(agent_id: str, offset: int = 0) -> StreamingResponse:
+    agent = db.get_agent(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    async def event_stream():
+        pos = offset
+        while True:
+            content, start, size = db.read_agent_log(agent_id, LOGS_DIR, pos)
+            if content:
+                pos = start + len(content)
+                payload = json.dumps({"content": content, "offset": pos, "size": size})
+                yield f"data: {payload}\n\n"
+            agent_row = db.get_agent(agent_id)
+            terminal = agent_row and agent_row.status.value in (
+                "completed",
+                "failed",
+                "cancelled",
+            )
+            if terminal:
+                yield "data: {\"done\": true}\n\n"
+                break
+            await asyncio.sleep(1)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
 @app.post("/api/nodes/{node_id}/claim")
 def claim_agent(node_id: str) -> dict:
     agent = db.claim_next_agent(node_id)
@@ -116,6 +200,17 @@ def claim_agent(node_id: str) -> dict:
 
 @app.patch("/api/agents/{agent_id}")
 def update_agent(agent_id: str, payload: AgentUpdate) -> dict:
+    existing = db.get_agent(agent_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    previous = existing.status.value
+
+    if payload.status == AgentStatus.CANCELLED or (
+        existing.cancel_requested and payload.status in (AgentStatus.FAILED, AgentStatus.CANCELLED, None)
+    ):
+        if existing.status == AgentStatus.RUNNING and payload.status is None:
+            payload.status = AgentStatus.CANCELLED
+
     agent = db.update_agent(
         agent_id,
         status=payload.status,
@@ -126,10 +221,14 @@ def update_agent(agent_id: str, payload: AgentUpdate) -> dict:
         max_iterations=payload.max_iterations,
         loop_phase=payload.loop_phase,
         estimated_cost_usd=payload.estimated_cost_usd,
+        cancel_requested=payload.cancel_requested,
+        git_branch=payload.git_branch,
     )
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
-    return agent.model_dump(mode="json")
+    data = agent.model_dump(mode="json")
+    _notify_if_terminal(data, previous)
+    return data
 
 
 @app.get("/api/dashboard")

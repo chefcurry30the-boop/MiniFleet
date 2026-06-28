@@ -333,6 +333,54 @@
       margin-left: 0.3rem;
     }
 
+    .health-bars {
+      padding: 0.6rem 1rem;
+      display: grid;
+      gap: 0.35rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.7rem;
+    }
+    .health-row { display: flex; align-items: center; gap: 0.5rem; }
+    .health-row span.label { width: 3rem; color: var(--muted); font-family: "IBM Plex Mono", monospace; font-size: 0.62rem; }
+    .health-bar { flex: 1; height: 5px; background: rgba(42,51,71,0.8); border-radius: 3px; overflow: hidden; }
+    .health-bar > i { display: block; height: 100%; border-radius: 3px; }
+    .health-bar > i.cpu { background: var(--blue); }
+    .health-bar > i.mem { background: var(--purple); }
+    .health-bar > i.disk { background: var(--amber); }
+    .health-meta { font-size: 0.65rem; color: var(--muted); padding: 0 1rem 0.5rem; font-family: "IBM Plex Mono", monospace; }
+
+    .agent { cursor: pointer; }
+    .agent:hover { background: rgba(91,156,245,0.05); }
+    .agent-actions { margin-top: 0.35rem; display: flex; gap: 0.4rem; flex-wrap: wrap; }
+    .btn-xs {
+      font-size: 0.62rem; font-family: "IBM Plex Mono", monospace;
+      padding: 0.15rem 0.45rem; border-radius: 4px; border: 1px solid var(--border);
+      background: var(--surface-2); color: var(--muted); cursor: pointer;
+    }
+    .btn-xs:hover { color: var(--text); border-color: var(--blue); }
+    .btn-xs.danger:hover { border-color: var(--red); color: var(--red); }
+
+    .log-modal {
+      display: none; position: fixed; inset: 0; z-index: 100;
+      background: rgba(0,0,0,0.65); align-items: center; justify-content: center; padding: 1rem;
+    }
+    .log-modal.open { display: flex; }
+    .log-panel {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+      width: min(900px, 100%); max-height: 85vh; display: flex; flex-direction: column;
+    }
+    .log-header {
+      padding: 0.85rem 1rem; border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;
+    }
+    .log-header h2 { font-size: 0.9rem; font-family: "IBM Plex Mono", monospace; }
+    .log-body {
+      padding: 1rem; overflow: auto; flex: 1;
+      font-family: "IBM Plex Mono", monospace; font-size: 0.72rem; line-height: 1.5;
+      white-space: pre-wrap; word-break: break-word; color: var(--muted);
+    }
+    .log-footer { padding: 0.6rem 1rem; border-top: 1px solid var(--border); display: flex; gap: 0.5rem; justify-content: flex-end; }
+
     .empty {
       padding: 1.5rem;
       text-align: center;
@@ -394,6 +442,10 @@
           <input type="checkbox" name="multi_agent" id="multi_agent" />
           <label for="multi_agent" style="margin:0">Multi-agent (reviewer)</label>
         </div>
+        <div class="row">
+          <input type="checkbox" name="git_push" id="git_push" />
+          <label for="git_push" style="margin:0">Git push on success</label>
+        </div>
         <label>Max iterations</label>
         <input name="max_iterations" type="number" value="20" min="1" />
         <label>Verify command</label>
@@ -407,6 +459,19 @@
   </div>
 
   <footer id="updated">Connecting…</footer>
+
+  <div class="log-modal" id="log-modal">
+    <div class="log-panel">
+      <div class="log-header">
+        <h2 id="log-title">Agent log</h2>
+        <button class="btn-xs" id="log-close">Close</button>
+      </div>
+      <div class="log-body" id="log-body">Loading…</div>
+      <div class="log-footer">
+        <button class="btn-xs danger" id="log-cancel" style="display:none">Cancel agent</button>
+      </div>
+    </div>
+  </div>
 
   <script>
     const icons = { running: "▶", completed: "✓", queued: "…", failed: "✗", cancelled: "—" };
@@ -436,6 +501,18 @@
         </div>`).join("");
     }
 
+    function renderHealth(node) {
+      if (node.cpu_percent == null && node.memory_percent == null && node.disk_percent == null) {
+        return "";
+      }
+      const bar = (val, cls) => {
+        const v = val != null ? Math.min(100, val) : 0;
+        return `<div class="health-row"><span class="label">${cls.toUpperCase()}</span><div class="health-bar"><i class="${cls}" style="width:${v}%"></i></div><span>${val != null ? v + "%" : "—"}</span></div>`;
+      };
+      const claude = node.claude_version ? `<div class="health-meta">${escapeHtml(node.claude_version)}</div>` : "";
+      return `<div class="health-bars">${bar(node.cpu_percent, "cpu")}${bar(node.memory_percent, "mem")}${bar(node.disk_percent, "disk")}</div>${claude}`;
+    }
+
     function renderAgent(agent) {
       const summary = agent.summary || (agent.status === "queued" ? "Waiting in queue" : agent.title);
       const repoLabel = agent.repo ? `📁 ${agent.repo}` : (agent.repo_path ? `📁 ${agent.repo_path.split('/').pop()}` : "");
@@ -448,14 +525,21 @@
       const costLabel = agent.estimated_cost_usd > 0
         ? `<span class="cost-badge">$${agent.estimated_cost_usd.toFixed(2)}</span>` : "";
       const multiBadge = agent.multi_agent ? '<span class="ma-badge">worker+reviewer</span>' : "";
+      const gitBadge = agent.git_branch ? `<span class="cost-badge">⎇ ${escapeHtml(agent.git_branch)}</span>` : "";
+      const canCancel = agent.status === "running" || agent.status === "queued";
+      const actions = `<div class="agent-actions">
+        <button class="btn-xs" data-action="logs" data-id="${escapeHtml(agent.id)}">Logs</button>
+        ${canCancel ? `<button class="btn-xs danger" data-action="cancel" data-id="${escapeHtml(agent.id)}">Cancel</button>` : ""}
+      </div>`;
       return `
-        <div class="agent">
+        <div class="agent" data-agent-id="${escapeHtml(agent.id)}">
           <div class="agent-icon ${agent.status}">${icons[agent.status] || "?"}</div>
           <div>
-            <div class="agent-title">${escapeHtml(agent.title)}${agent.remote ? '<span class="rc-badge">RC</span>' : ''}${loopBadge}${multiBadge}${costLabel}</div>
+            <div class="agent-title">${escapeHtml(agent.title)}${agent.remote ? '<span class="rc-badge">RC</span>' : ''}${loopBadge}${multiBadge}${costLabel}${gitBadge}</div>
             ${repoLabel ? `<div class="agent-meta">${escapeHtml(repoLabel)}</div>` : ""}
             <div class="agent-summary">${escapeHtml(summary)}</div>
             ${remoteLink}
+            ${actions}
           </div>
         </div>`;
     }
@@ -507,6 +591,7 @@
               ${ghBadge}
             </div>
           </div>
+          ${renderHealth(node)}
           <div class="counts">
             <div class="count running"><div class="num">${item.running}</div><div class="label">Running</div></div>
             <div class="count done"><div class="num">${item.completed}</div><div class="label">Done</div></div>
@@ -618,6 +703,7 @@
           max_iterations: parseInt(fd.get("max_iterations") || "20", 10),
           verify_command: fd.get("verify") || undefined,
           multi_agent: fd.get("multi_agent") === "on",
+          git_push: fd.get("git_push") === "on",
         },
       };
       try {
@@ -640,6 +726,82 @@
 
     refresh();
     setInterval(refresh, 5000);
+
+    let logModalAgent = null;
+    let logOffset = 0;
+    let logPollTimer = null;
+
+    async function fetchLogs(agentId, append) {
+      const res = await fetch(`/api/agents/${agentId}/logs?offset=${logOffset}`);
+      const data = await res.json();
+      const body = document.getElementById("log-body");
+      if (append && data.content) {
+        body.textContent += data.content;
+        body.scrollTop = body.scrollHeight;
+      } else if (!append) {
+        body.textContent = data.content || "(no logs yet)";
+      }
+      logOffset = data.offset || 0;
+    }
+
+    async function openLogModal(agentId, title, status) {
+      logModalAgent = agentId;
+      logOffset = 0;
+      document.getElementById("log-title").textContent = title || "Agent log";
+      document.getElementById("log-body").textContent = "Loading…";
+      document.getElementById("log-cancel").style.display =
+        (status === "running" || status === "queued") ? "inline-block" : "none";
+      document.getElementById("log-modal").classList.add("open");
+      await fetchLogs(agentId, false);
+      if (logPollTimer) clearInterval(logPollTimer);
+      logPollTimer = setInterval(() => fetchLogs(agentId, true), 1500);
+    }
+
+    function closeLogModal() {
+      document.getElementById("log-modal").classList.remove("open");
+      logModalAgent = null;
+      if (logPollTimer) clearInterval(logPollTimer);
+      logPollTimer = null;
+    }
+
+    document.getElementById("log-close").addEventListener("click", closeLogModal);
+    document.getElementById("log-modal").addEventListener("click", (e) => {
+      if (e.target.id === "log-modal") closeLogModal();
+    });
+
+    document.getElementById("log-cancel").addEventListener("click", async () => {
+      if (!logModalAgent) return;
+      await fetch(`/api/agents/${logModalAgent}/cancel`, { method: "POST" });
+      document.getElementById("log-cancel").style.display = "none";
+      refresh();
+    });
+
+    document.getElementById("grid").addEventListener("click", async (e) => {
+      const btn = e.target.closest("[data-action]");
+      if (!btn) {
+        const row = e.target.closest(".agent[data-agent-id]");
+        if (row) {
+          const id = row.dataset.agentId;
+          const title = row.querySelector(".agent-title")?.textContent || "Agent";
+          const icon = row.querySelector(".agent-icon");
+          const status = icon ? [...icon.classList].find(c => ["running","queued","completed","failed","cancelled"].includes(c)) : "running";
+          openLogModal(id, title, status);
+        }
+        return;
+      }
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      if (btn.dataset.action === "logs") {
+        const card = btn.closest(".agent");
+        const title = card?.querySelector(".agent-title")?.textContent;
+        const icon = card?.querySelector(".agent-icon");
+        const status = icon ? [...icon.classList].find(c => ["running","queued","completed","failed","cancelled"].includes(c)) : "running";
+        openLogModal(id, title, status);
+      } else if (btn.dataset.action === "cancel") {
+        await fetch(`/api/agents/${id}/cancel`, { method: "POST" });
+        refresh();
+      }
+    });
   </script>
 </body>
 </html>

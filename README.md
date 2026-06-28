@@ -226,8 +226,22 @@ Remote Control requires Claude Code v2.1.51+ and a claude.ai subscription.
 | `MINIFLEET_DATA` | `~/.minifleet` | Logs + SQLite path |
 | `MINIFLEET_MOCK` | — | Set to `1` for mock agents (testing) |
 | `MINIFLEET_CLAUDE` | `claude` in PATH | Path to Claude Code binary |
+| `MINIFLEET_NOTIFY_MACOS` | `1` | macOS notification on job complete/fail (coordinator host) |
+| `MINIFLEET_WEBHOOK_URL` | — | POST JSON to this URL on job events (phone, Slack, etc.) |
+| `MINIFLEET_NOTIFY_ON` | `completed,failed,cancelled` | Comma-separated events to notify on |
 
 For unattended Mac Minis, set `MINIFLEET_PERMISSION_MODE=auto` (or `bypassPermissions` if you trust the environment).
+
+## Job control
+
+```bash
+minifleet cancel <agent-id>          # stop queued or running job
+minifleet logs <agent-id>            # view logs (no SSH)
+minifleet logs <agent-id> --follow   # live tail from coordinator
+minifleet assign "..." --git-push    # auto branch + commit + push on success
+```
+
+Dashboard: click any agent → live log viewer + Cancel button. Node cards show CPU / RAM / disk.
 
 ## Development / local test
 

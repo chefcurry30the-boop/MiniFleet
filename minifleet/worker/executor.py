@@ -9,6 +9,7 @@ import re
 import shutil
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -34,6 +35,7 @@ class AgentExecutor(ABC):
         log_path: Path,
         title: str | None = None,
         remote: bool = False,
+        cancel_check: Callable[[], Awaitable[bool]] | None = None,
     ) -> ExecutionResult:
         raise NotImplementedError
 
@@ -112,6 +114,7 @@ class ClaudeCodeExecutor(AgentExecutor):
         log_path: Path,
         title: str | None = None,
         remote: bool = False,
+        cancel_check: Callable[[], Awaitable[bool]] | None = None,
     ) -> ExecutionResult:
         if not self.claude_bin:
             return ExecutionResult(
@@ -135,6 +138,7 @@ class ClaudeCodeExecutor(AgentExecutor):
             log_path=log_path,
             title=title,
             remote=remote,
+            cancel_check=cancel_check,
         )
 
     async def _run_print(
@@ -145,6 +149,7 @@ class ClaudeCodeExecutor(AgentExecutor):
         log_path: Path,
         title: str | None,
         remote: bool,
+        cancel_check: Callable[[], Awaitable[bool]] | None = None,
     ) -> ExecutionResult:
         cwd = str(repo_path) if repo_path and repo_path.exists() else None
         cmd = [
@@ -159,7 +164,9 @@ class ClaudeCodeExecutor(AgentExecutor):
             cmd.extend(["--remote-control", title])
         cmd.append(prompt)
 
-        return await self._exec_and_wait(cmd, cwd=cwd, log_path=log_path, prompt=prompt)
+        return await self._exec_and_wait(
+            cmd, cwd=cwd, log_path=log_path, prompt=prompt, cancel_check=cancel_check
+        )
 
     async def _run_background(
         self,
@@ -169,6 +176,7 @@ class ClaudeCodeExecutor(AgentExecutor):
         log_path: Path,
         title: str | None,
         remote: bool,
+        cancel_check: Callable[[], Awaitable[bool]] | None = None,
     ) -> ExecutionResult:
         cwd = str(repo_path) if repo_path and repo_path.exists() else None
         before = {a.get("sessionId") for a in await list_claude_agents(cwd=cwd)}
@@ -261,6 +269,7 @@ class ClaudeCodeExecutor(AgentExecutor):
         cwd: str | None,
         log_path: Path,
         prompt: str,
+        cancel_check: Callable[[], Awaitable[bool]] | None = None,
     ) -> ExecutionResult:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.write_text(f"$ {' '.join(cmd)}\n\n", encoding="utf-8")
@@ -274,7 +283,7 @@ class ClaudeCodeExecutor(AgentExecutor):
         )
 
         try:
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=self.timeout_seconds)
+            stdout = await self._communicate_with_cancel(proc, cancel_check)
         except asyncio.TimeoutError:
             proc.kill()
             await proc.communicate()
@@ -283,6 +292,14 @@ class ClaudeCodeExecutor(AgentExecutor):
                 output="",
                 success=False,
                 error=f"Exceeded {self.timeout_seconds}s timeout",
+            )
+
+        if stdout is None:
+            return ExecutionResult(
+                summary="Cancelled by user",
+                output="",
+                success=False,
+                error="cancelled",
             )
 
         output = stdout.decode("utf-8", errors="replace")
@@ -299,6 +316,29 @@ class ClaudeCodeExecutor(AgentExecutor):
             success=success,
             error=error,
         )
+
+    async def _communicate_with_cancel(
+        self,
+        proc: asyncio.subprocess.Process,
+        cancel_check: Callable[[], Awaitable[bool]] | None,
+    ) -> bytes | None:
+        comm_task = asyncio.create_task(proc.communicate())
+        deadline = time.monotonic() + self.timeout_seconds
+        while not comm_task.done():
+            if time.monotonic() > deadline:
+                proc.kill()
+                comm_task.cancel()
+                raise asyncio.TimeoutError
+            if cancel_check and await cancel_check():
+                proc.kill()
+                try:
+                    await comm_task
+                except asyncio.CancelledError:
+                    pass
+                return None
+            await asyncio.sleep(0.5)
+        stdout, _ = comm_task.result()
+        return stdout or b""
 
     @staticmethod
     def _find_new_session(before: set[str | None], after: list[dict]) -> str | None:
@@ -318,6 +358,7 @@ class MockAgentExecutor(AgentExecutor):
         log_path: Path,
         title: str | None = None,
         remote: bool = False,
+        cancel_check: Callable[[], Awaitable[bool]] | None = None,
     ) -> ExecutionResult:
         await asyncio.sleep(0.3)
         iteration = 1

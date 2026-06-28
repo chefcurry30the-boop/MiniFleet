@@ -65,6 +65,9 @@ def cmd_assign(args: argparse.Namespace) -> int:
             "cost_cap_usd": args.cost_cap,
             "completion_threshold": args.completion_threshold,
         }
+        if args.git_push:
+            loop_config["git_push"] = True
+            loop_config["git_branch_prefix"] = args.git_branch_prefix
         loop_config = {k: v for k, v in loop_config.items() if v is not None}
 
     payload = {
@@ -137,6 +140,55 @@ def cmd_repo_list(_: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_cancel(args: argparse.Namespace) -> int:
+    resp = httpx.post(f"{coordinator_url()}/api/agents/{args.agent_id}/cancel", timeout=10.0)
+    resp.raise_for_status()
+    agent = resp.json()
+    print(f"Cancelled: {agent['title']} ({agent['status']})")
+    return 0
+
+
+def cmd_logs(args: argparse.Namespace) -> int:
+    offset = args.offset
+    url = coordinator_url()
+    if args.follow:
+        import sys
+
+        try:
+            with httpx.stream(
+                "GET",
+                f"{url}/api/agents/{args.agent_id}/logs/stream",
+                params={"offset": offset},
+                timeout=None,
+            ) as resp:
+                resp.raise_for_status()
+                for line in resp.iter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data = json.loads(line[6:])
+                    if data.get("done"):
+                        break
+                    chunk = data.get("content", "")
+                    if chunk:
+                        sys.stdout.write(chunk)
+                        sys.stdout.flush()
+        except KeyboardInterrupt:
+            print()
+        return 0
+
+    resp = httpx.get(
+        f"{url}/api/agents/{args.agent_id}/logs",
+        params={"offset": offset},
+        timeout=10.0,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    print(data.get("content", ""), end="")
+    if args.follow is False and data.get("size", 0) > data.get("offset", 0):
+        pass
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="minifleet", description="Mac fleet agent control (Minis, MacBooks, etc.)")
     parser.add_argument(
@@ -180,6 +232,12 @@ def main() -> None:
     p_assign.add_argument("--multi-agent", action="store_true", help="Worker + reviewer agents")
     p_assign.add_argument("--cost-cap", type=float, help="Stop loop at estimated USD cap")
     p_assign.add_argument("--completion-threshold", type=int, default=2)
+    p_assign.add_argument(
+        "--git-push",
+        action="store_true",
+        help="Auto branch, commit, and push on success",
+    )
+    p_assign.add_argument("--git-branch-prefix", default="minifleet")
     p_assign.set_defaults(func=cmd_assign, loop=True)
 
     p_dash = sub.add_parser("dashboard", help="Open web dashboard")
@@ -202,6 +260,16 @@ def main() -> None:
 
     p_repo_list = repo_sub.add_parser("list", help="List registered repos")
     p_repo_list.set_defaults(func=cmd_repo_list)
+
+    p_cancel = sub.add_parser("cancel", help="Cancel a queued or running agent")
+    p_cancel.add_argument("agent_id", help="Agent UUID")
+    p_cancel.set_defaults(func=cmd_cancel)
+
+    p_logs = sub.add_parser("logs", help="View agent logs from coordinator")
+    p_logs.add_argument("agent_id", help="Agent UUID")
+    p_logs.add_argument("--follow", "-f", action="store_true", help="Stream logs live")
+    p_logs.add_argument("--offset", type=int, default=0, help="Byte offset into log")
+    p_logs.set_defaults(func=cmd_logs)
 
     args = parser.parse_args()
     if args.coordinator:

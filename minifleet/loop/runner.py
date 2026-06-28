@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -74,6 +75,9 @@ class LoopRunner:
         client: httpx.AsyncClient,
         agent: dict,
         repo_path: Path | None,
+        *,
+        cancel_check: Callable[[], Awaitable[bool]] | None = None,
+        on_iteration_log: Callable[[Path, str], None] | None = None,
     ) -> LoopResult:
         agent_id = agent["id"]
         objective = agent["prompt"]
@@ -90,6 +94,16 @@ class LoopRunner:
         last_iteration = 0
 
         for iteration in range(1, config.max_iterations + 1):
+            if cancel_check and await cancel_check():
+                return LoopResult(
+                    success=False,
+                    summary="Cancelled by user",
+                    iterations=max(0, iteration - 1),
+                    estimated_cost_usd=estimated_cost,
+                    error="cancelled",
+                    stop_reason="cancelled",
+                )
+
             last_iteration = iteration
             elapsed = time.monotonic() - start
             if elapsed > config.max_duration_seconds:
@@ -144,11 +158,23 @@ class LoopRunner:
                 log_path=work_log,
                 title=f"{title} iter {iteration}",
                 remote=bool(agent.get("remote")),
+                cancel_check=cancel_check,
             )
+            if on_iteration_log:
+                on_iteration_log(work_log, f"iteration {iteration} work")
             estimated_cost += config.cost_per_iteration_usd
             last_summary = work_result.summary or f"Iteration {iteration} work done"
 
             if not work_result.success:
+                if work_result.error == "cancelled":
+                    return LoopResult(
+                        success=False,
+                        summary="Cancelled by user",
+                        iterations=iteration,
+                        estimated_cost_usd=estimated_cost,
+                        error="cancelled",
+                        stop_reason="cancelled",
+                    )
                 append_iteration_log(path, iteration, f"Work failed: {work_result.error}")
                 return LoopResult(
                     success=False,

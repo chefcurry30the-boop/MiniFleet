@@ -39,6 +39,17 @@ class Node(BaseModel):
     status: NodeStatus
     last_seen: datetime
     ip: Optional[str] = None
+    cpu_percent: Optional[float] = None
+    memory_percent: Optional[float] = None
+    disk_percent: Optional[float] = None
+    claude_version: Optional[str] = None
+
+
+class NodeHeartbeat(BaseModel):
+    cpu_percent: Optional[float] = None
+    memory_percent: Optional[float] = None
+    disk_percent: Optional[float] = None
+    claude_version: Optional[str] = None
 
 
 class AgentCreate(BaseModel):
@@ -72,6 +83,8 @@ class Agent(BaseModel):
     loop_phase: Optional[str] = None
     estimated_cost_usd: float = 0.0
     multi_agent: bool = False
+    cancel_requested: bool = False
+    git_branch: Optional[str] = None
     created_at: datetime
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
@@ -87,6 +100,8 @@ class AgentUpdate(BaseModel):
     max_iterations: Optional[int] = None
     loop_phase: Optional[str] = None
     estimated_cost_usd: Optional[float] = None
+    cancel_requested: Optional[bool] = None
+    git_branch: Optional[str] = None
 
 
 class NodeDashboard(BaseModel):

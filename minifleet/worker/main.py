@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import socket
 import sys
@@ -11,8 +12,12 @@ from pathlib import Path
 import httpx
 
 from minifleet.device import detect_device_type, device_label
+from minifleet.health import collect_health
+from minifleet.loop.config import LoopConfig
 from minifleet.loop.runner import LoopRunner
 from minifleet.worker.executor import default_executor
+from minifleet.worker.git_push import push_job_changes
+from minifleet.worker.logs import LogSyncer
 from minifleet.worker.sync import RepoSyncer
 
 
@@ -43,7 +48,7 @@ class Worker:
             coordinator_url=self.coordinator_url,
         )
         self.syncer: RepoSyncer | None = None
-        self._active: set[asyncio.Task] = set()
+        self._active: dict[str, asyncio.Task] = {}
 
     @property
     def hostname(self) -> str:
@@ -72,11 +77,25 @@ class Worker:
         print(f"[minifleet-worker] registered as {self.node_name} ({device_label(device_type)}) ({self.node_id})")
         print(f"[minifleet-worker] github: {'ok' if ok else 'FAILED'} ({method})")
 
+    async def is_cancelled(self, client: httpx.AsyncClient, agent_id: str) -> bool:
+        try:
+            resp = await client.get(f"{self.coordinator_url}/api/agents/{agent_id}", timeout=10.0)
+            resp.raise_for_status()
+            data = resp.json()
+            return bool(data.get("cancel_requested")) or data.get("status") == "cancelled"
+        except httpx.HTTPError:
+            return False
+
     async def heartbeat_loop(self, client: httpx.AsyncClient) -> None:
         while True:
             if self.node_id:
                 try:
-                    await client.post(f"{self.coordinator_url}/api/nodes/{self.node_id}/heartbeat")
+                    health = collect_health()
+                    await client.post(
+                        f"{self.coordinator_url}/api/nodes/{self.node_id}/heartbeat",
+                        json=health,
+                        timeout=10.0,
+                    )
                 except httpx.HTTPError as exc:
                     print(f"[minifleet-worker] heartbeat failed: {exc}")
             await asyncio.sleep(self.heartbeat_interval)
@@ -95,20 +114,87 @@ class Worker:
             return Path(agent["repo_path"])
         return None
 
+    def _parse_loop_config(self, agent: dict) -> LoopConfig:
+        raw = agent.get("loop_config")
+        if isinstance(raw, dict):
+            return LoopConfig(**raw)
+        if isinstance(raw, str):
+            return LoopConfig(**json.loads(raw))
+        return LoopConfig()
+
+    async def _maybe_git_push(
+        self,
+        client: httpx.AsyncClient,
+        agent_id: str,
+        agent: dict,
+        repo_path: Path | None,
+        summary: str,
+        success: bool,
+    ) -> str:
+        if not success or not repo_path:
+            return summary
+        config = self._parse_loop_config(agent)
+        if not config.git_push:
+            return summary
+
+        ok, branch, message = await push_job_changes(
+            repo_path,
+            agent_id=agent_id,
+            title=agent.get("title", "MiniFleet job"),
+            summary=summary,
+            branch_prefix=config.git_branch_prefix,
+        )
+        patch: dict = {}
+        if branch:
+            patch["git_branch"] = branch
+        if ok:
+            patch["summary"] = f"{summary} · {message}"
+        else:
+            patch["summary"] = f"{summary} · git push failed: {message}"
+        if patch:
+            await client.patch(f"{self.coordinator_url}/api/agents/{agent_id}", json=patch)
+        return patch.get("summary", summary)
+
     async def run_agent(self, client: httpx.AsyncClient, agent: dict) -> None:
         agent_id = agent["id"]
         prompt = agent["prompt"]
         use_loop = agent.get("loop", True)
         log_path = self.logs_dir / f"{agent_id}.log"
+        log_path.write_text(f"=== Agent {agent_id} ===\n{agent.get('title', '')}\n\n", encoding="utf-8")
+
+        log_syncer = LogSyncer(
+            coordinator_url=self.coordinator_url,
+            agent_id=agent_id,
+            log_path=log_path,
+        )
+        sync_task = asyncio.create_task(log_syncer.run(client))
+
+        async def cancel_check() -> bool:
+            return await self.is_cancelled(client, agent_id)
+
+        def on_iteration_log(iter_log: Path, label: str) -> None:
+            LogSyncer.append_loop_log(log_path, iter_log, label)
 
         mode = "loop" if use_loop else "single"
         print(f"[minifleet-worker] starting {mode} agent {agent_id}: {agent.get('title', prompt[:60])}")
 
+        result = None
+        repo_path = None
+        status = "failed"
         try:
             repo_path = await self.resolve_repo_path(client, agent)
 
             if use_loop:
-                result = await self.loop_runner.run(client, agent, repo_path)
+                result = await self.loop_runner.run(
+                    client,
+                    agent,
+                    repo_path,
+                    cancel_check=cancel_check,
+                    on_iteration_log=on_iteration_log,
+                )
+                status = "cancelled" if result.stop_reason == "cancelled" else (
+                    "completed" if result.success else "failed"
+                )
                 summary = (
                     f"{result.summary} ({result.iterations} iterations, "
                     f"${result.estimated_cost_usd:.2f} est., {result.stop_reason})"
@@ -116,7 +202,7 @@ class Worker:
                 await client.patch(
                     f"{self.coordinator_url}/api/agents/{agent_id}",
                     json={
-                        "status": "completed" if result.success else "failed",
+                        "status": status,
                         "summary": summary,
                         "error": result.error,
                         "iteration": result.iterations,
@@ -131,29 +217,45 @@ class Worker:
                     log_path=log_path,
                     title=agent.get("title"),
                     remote=bool(agent.get("remote")),
+                    cancel_check=cancel_check,
                 )
+                if await cancel_check():
+                    status = "cancelled"
+                    summary = "Cancelled by user"
+                    error = "cancelled"
+                else:
+                    status = "completed" if result.success else "failed"
+                    summary = result.summary
+                    error = result.error
                 await client.patch(
                     f"{self.coordinator_url}/api/agents/{agent_id}",
                     json={
-                        "status": "completed" if result.success else "failed",
-                        "summary": result.summary,
-                        "error": result.error,
+                        "status": status,
+                        "summary": summary,
+                        "error": error,
                         "claude_session_id": result.claude_session_id,
                     },
                 )
 
-            status = "completed" if result.success else "failed"
-            print(f"[minifleet-worker] agent {agent_id} {status}")
+            if result and status == "completed":
+                await self._maybe_git_push(client, agent_id, agent, repo_path, summary, True)
+
+            final = status if result else "failed"
+            print(f"[minifleet-worker] agent {agent_id} {final}")
         except Exception as exc:  # noqa: BLE001
             await client.patch(
                 f"{self.coordinator_url}/api/agents/{agent_id}",
                 json={"status": "failed", "summary": "Worker error", "error": str(exc)},
             )
             print(f"[minifleet-worker] agent {agent_id} crashed: {exc}")
+        finally:
+            log_syncer.stop()
+            await sync_task
+            self._active.pop(agent_id, None)
 
     async def poll_loop(self, client: httpx.AsyncClient) -> None:
         while True:
-            self._active = {t for t in self._active if not t.done()}
+            self._active = {aid: t for aid, t in self._active.items() if not t.done()}
 
             if self.node_id:
                 while True:
@@ -167,8 +269,9 @@ class Worker:
                         agent = resp.json().get("agent")
                         if not agent:
                             break
+                        agent_id = agent["id"]
                         task = asyncio.create_task(self.run_agent(client, agent))
-                        self._active.add(task)
+                        self._active[agent_id] = task
                     except httpx.HTTPError as exc:
                         print(f"[minifleet-worker] claim failed: {exc}")
                         break
