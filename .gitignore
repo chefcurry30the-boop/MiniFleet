@@ -1,0 +1,25 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+.venv/
+venv/
+.env
+.env.*
+*.db
+.DS_Store
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
+
+# Local MiniFleet runtime data
+.minifleet/
+
+# Editor
+.idea/
+.vscode/
+*.swp

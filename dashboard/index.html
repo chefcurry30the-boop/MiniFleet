@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MiniFleet Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0c0e12;
+      --surface: #141820;
+      --surface-2: #1a2030;
+      --border: #2a3347;
+      --text: #e8edf5;
+      --muted: #8b97ad;
+      --green: #3dd68c;
+      --blue: #5b9cf5;
+      --amber: #f5b942;
+      --red: #f07178;
+      --purple: #c792ea;
+      --github: #f0f6fc;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "IBM Plex Sans", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      background-image:
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(91, 156, 245, 0.12), transparent),
+        radial-gradient(ellipse 60% 40% at 100% 100%, rgba(61, 214, 140, 0.06), transparent);
+    }
+
+    header {
+      padding: 1.5rem 2rem 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h1 {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 1.35rem;
+      font-weight: 600;
+    }
+
+    h1 span { color: var(--muted); font-weight: 400; font-size: 0.9rem; }
+
+    .header-right { display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
+
+    .totals {
+      display: flex;
+      gap: 1.25rem;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.82rem;
+    }
+
+    .totals .stat { color: var(--muted); }
+    .totals .stat strong { margin-left: 0.35rem; }
+    .totals .running strong { color: var(--blue); }
+    .totals .done strong { color: var(--green); }
+    .totals .queued strong { color: var(--amber); }
+    .totals .failed strong { color: var(--red); }
+
+    .github-fleet {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.75rem;
+      padding: 0.35rem 0.65rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+    .github-fleet.ok { color: var(--green); border-color: rgba(61,214,140,0.3); }
+    .github-fleet.warn { color: var(--amber); border-color: rgba(245,185,66,0.3); }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 0;
+      min-height: calc(100vh - 80px);
+    }
+
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      .sidebar { border-right: none; border-bottom: 1px solid var(--border); }
+    }
+
+    .sidebar {
+      border-right: 1px solid var(--border);
+      padding: 1.25rem;
+      background: rgba(20, 24, 32, 0.5);
+    }
+
+    .panel-title {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+    }
+
+    .repo-list { margin-bottom: 1.5rem; }
+
+    .repo-item {
+      padding: 0.6rem 0.75rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 0.5rem;
+      font-size: 0.82rem;
+    }
+
+    .repo-item .name { font-family: "IBM Plex Mono", monospace; font-weight: 600; }
+    .repo-item .slug { color: var(--muted); font-size: 0.72rem; margin-top: 0.15rem; word-break: break-all; }
+    .repo-item .branch { color: var(--purple); font-size: 0.7rem; font-family: "IBM Plex Mono", monospace; }
+
+    .assign-form {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+    }
+
+    .assign-form label {
+      display: block;
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-bottom: 0.25rem;
+      margin-top: 0.65rem;
+    }
+
+    .assign-form label:first-child { margin-top: 0; }
+
+    .assign-form input,
+    .assign-form select,
+    .assign-form textarea {
+      width: 100%;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 0.5rem 0.65rem;
+      font-family: inherit;
+      font-size: 0.82rem;
+    }
+
+    .assign-form textarea { min-height: 72px; resize: vertical; }
+
+    .assign-form .row { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.65rem; }
+    .assign-form .row input[type=checkbox] { width: auto; }
+
+    .btn {
+      margin-top: 0.85rem;
+      width: 100%;
+      padding: 0.55rem;
+      background: var(--blue);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn:hover { filter: brightness(1.1); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      margin-top: 0.5rem;
+    }
+
+    .toast {
+      margin-top: 0.5rem;
+      font-size: 0.75rem;
+      padding: 0.4rem 0.5rem;
+      border-radius: 4px;
+      display: none;
+    }
+    .toast.ok { display: block; background: rgba(61,214,140,0.15); color: var(--green); }
+    .toast.err { display: block; background: rgba(240,113,120,0.15); color: var(--red); }
+
+    main {
+      padding: 1.25rem 1.5rem 2rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+      gap: 1rem;
+      align-content: start;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 0.9rem 1rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .node-name {
+      font-family: "IBM Plex Mono", monospace;
+      font-weight: 600;
+      font-size: 0.92rem;
+    }
+
+    .device-type {
+      font-size: 0.65rem;
+      font-weight: 400;
+      color: var(--muted);
+      margin-left: 0.35rem;
+    }
+
+    .badges { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+
+    .badge {
+      font-size: 0.65rem;
+      font-family: "IBM Plex Mono", monospace;
+      padding: 0.18rem 0.45rem;
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge.online { background: rgba(61,214,140,0.15); color: var(--green); }
+    .badge.offline { background: rgba(139,151,173,0.15); color: var(--muted); }
+    .badge.gh-ok { background: rgba(240,246,252,0.08); color: var(--github); }
+    .badge.gh-fail { background: rgba(240,113,120,0.15); color: var(--red); }
+
+    .counts {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.5rem;
+      padding: 0.75rem 1rem;
+      background: var(--surface-2);
+    }
+
+    .count { text-align: center; }
+    .count .num { font-family: "IBM Plex Mono", monospace; font-size: 1.25rem; font-weight: 600; }
+    .count .label { font-size: 0.62rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+    .count.running .num { color: var(--blue); }
+    .count.done .num { color: var(--green); }
+    .count.queued .num { color: var(--amber); }
+    .count.failed .num { color: var(--red); }
+
+    .section-label {
+      padding: 0.5rem 1rem 0;
+      font-size: 0.65rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-family: "IBM Plex Mono", monospace;
+    }
+
+    .repo-sync {
+      padding: 0.35rem 1rem 0.5rem;
+      font-size: 0.75rem;
+    }
+
+    .sync-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.3rem 0;
+      border-bottom: 1px solid rgba(42,51,71,0.4);
+      gap: 0.5rem;
+    }
+    .sync-row:last-child { border-bottom: none; }
+    .sync-row .ok { color: var(--green); }
+    .sync-row .fail { color: var(--red); }
+    .sync-row .commit { color: var(--muted); font-family: "IBM Plex Mono", monospace; font-size: 0.68rem; }
+
+    .agents { padding: 0.35rem 0; max-height: 280px; overflow-y: auto; }
+
+    .agent {
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid rgba(42,51,71,0.5);
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 0.6rem;
+      align-items: start;
+    }
+    .agent:last-child { border-bottom: none; }
+
+    .agent-icon {
+      width: 1.2rem; height: 1.2rem;
+      border-radius: 4px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.6rem;
+      font-family: "IBM Plex Mono", monospace;
+      margin-top: 0.1rem;
+    }
+    .agent-icon.running { background: rgba(91,156,245,0.2); color: var(--blue); }
+    .agent-icon.completed { background: rgba(61,214,140,0.2); color: var(--green); }
+    .agent-icon.queued { background: rgba(245,185,66,0.2); color: var(--amber); }
+    .agent-icon.failed { background: rgba(240,113,120,0.2); color: var(--red); }
+
+    .agent-title { font-size: 0.83rem; font-weight: 500; line-height: 1.35; }
+    .agent-meta { font-size: 0.7rem; color: var(--muted); margin-top: 0.15rem; }
+    .agent-summary { font-size: 0.76rem; color: var(--muted); margin-top: 0.15rem; line-height: 1.4; }
+    .agent-summary a { color: var(--purple); text-decoration: none; }
+    .rc-badge {
+      font-size: 0.58rem; font-family: "IBM Plex Mono", monospace;
+      background: rgba(199,146,234,0.2); color: var(--purple);
+      padding: 0.08rem 0.3rem; border-radius: 3px; margin-left: 0.3rem;
+    }
+    .loop-badge {
+      font-size: 0.58rem; font-family: "IBM Plex Mono", monospace;
+      background: rgba(91,156,245,0.2); color: var(--blue);
+      padding: 0.08rem 0.3rem; border-radius: 3px; margin-left: 0.3rem;
+    }
+    .ma-badge {
+      font-size: 0.58rem; font-family: "IBM Plex Mono", monospace;
+      background: rgba(245,185,66,0.15); color: var(--amber);
+      padding: 0.08rem 0.3rem; border-radius: 3px; margin-left: 0.3rem;
+    }
+    .cost-badge {
+      font-size: 0.58rem; font-family: "IBM Plex Mono", monospace;
+      color: var(--muted);
+      margin-left: 0.3rem;
+    }
+
+    .empty {
+      padding: 1.5rem;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.85rem;
+      grid-column: 1 / -1;
+    }
+
+    footer {
+      padding: 0.75rem 2rem;
+      font-size: 0.72rem;
+      color: var(--muted);
+      font-family: "IBM Plex Mono", monospace;
+      border-top: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>MiniFleet <span>Claude Code · Mac fleet · Private GitHub</span></h1>
+    <div class="header-right">
+      <div class="totals" id="totals"></div>
+      <div class="github-fleet warn" id="github-fleet">GitHub —</div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="panel-title">Private GitHub repos</div>
+      <div class="repo-list" id="repo-list"></div>
+
+      <div class="panel-title">Add repo</div>
+      <form class="assign-form" id="add-repo-form" style="margin-bottom:1.5rem">
+        <label>Alias</label>
+        <input name="name" placeholder="my-app" required />
+        <label>Git URL</label>
+        <input name="url" placeholder="git@github.com:org/repo.git" required />
+        <label>Branch</label>
+        <input name="branch" value="main" />
+        <button type="submit" class="btn btn-secondary">Register repo</button>
+        <div class="toast" id="repo-toast"></div>
+      </form>
+
+      <div class="panel-title">Assign agent</div>
+      <form class="assign-form" id="assign-form">
+        <label>Prompt</label>
+        <textarea name="prompt" placeholder="Fix the triage bug and run smoke tests" required></textarea>
+        <label>Title</label>
+        <input name="title" placeholder="Triage + smoke test" />
+        <label>Repo</label>
+        <select name="repo" id="repo-select"><option value="">— none —</option></select>
+        <label>Machine</label>
+        <select name="node" id="node-select"><option value="">any available</option></select>
+        <div class="row">
+          <input type="checkbox" name="remote" id="remote" />
+          <label for="remote" style="margin:0">Remote Control</label>
+        </div>
+        <div class="row">
+          <input type="checkbox" name="multi_agent" id="multi_agent" />
+          <label for="multi_agent" style="margin:0">Multi-agent (reviewer)</label>
+        </div>
+        <label>Max iterations</label>
+        <input name="max_iterations" type="number" value="20" min="1" />
+        <label>Verify command</label>
+        <input name="verify" placeholder='npm test' />
+        <button type="submit" class="btn">Queue agent</button>
+        <div class="toast" id="assign-toast"></div>
+      </form>
+    </aside>
+
+    <main id="grid"></main>
+  </div>
+
+  <footer id="updated">Connecting…</footer>
+
+  <script>
+    const icons = { running: "▶", completed: "✓", queued: "…", failed: "✗", cancelled: "—" };
+
+    function escapeHtml(s) {
+      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    }
+
+    function renderRepoList(repos) {
+      if (!repos.length) {
+        return '<div class="repo-item" style="color:var(--muted);font-size:0.78rem">No repos yet — add your private GitHub repos below.</div>';
+      }
+      return repos.map(r => `
+        <div class="repo-item">
+          <div class="name">${escapeHtml(r.name)}</div>
+          <div class="slug">${escapeHtml(r.slug || r.url)}</div>
+          <div class="branch">${escapeHtml(r.branch)}</div>
+        </div>`).join("");
+    }
+
+    function renderSyncRows(repos) {
+      if (!repos || !repos.length) return "";
+      return repos.map(r => `
+        <div class="sync-row">
+          <span>${escapeHtml(r.name)}</span>
+          <span class="${r.ok ? 'ok' : 'fail'}">${r.ok ? (r.commit || 'synced') : 'failed'}</span>
+        </div>`).join("");
+    }
+
+    function renderAgent(agent) {
+      const summary = agent.summary || (agent.status === "queued" ? "Waiting in queue" : agent.title);
+      const repoLabel = agent.repo ? `📁 ${agent.repo}` : (agent.repo_path ? `📁 ${agent.repo_path.split('/').pop()}` : "");
+      const remoteLink = agent.remote && agent.status === "running"
+        ? `<div class="agent-summary"><a href="https://claude.ai/code" target="_blank" rel="noopener">↗ steer via Remote Control</a></div>` : "";
+      const loopBadge = agent.loop !== false
+        ? `<span class="loop-badge">${agent.status === "running" && agent.iteration
+            ? `↻ ${agent.iteration}/${agent.max_iterations || "?"} ${agent.loop_phase || ""}`
+            : "loop"}</span>` : "";
+      const costLabel = agent.estimated_cost_usd > 0
+        ? `<span class="cost-badge">$${agent.estimated_cost_usd.toFixed(2)}</span>` : "";
+      const multiBadge = agent.multi_agent ? '<span class="ma-badge">worker+reviewer</span>' : "";
+      return `
+        <div class="agent">
+          <div class="agent-icon ${agent.status}">${icons[agent.status] || "?"}</div>
+          <div>
+            <div class="agent-title">${escapeHtml(agent.title)}${agent.remote ? '<span class="rc-badge">RC</span>' : ''}${loopBadge}${multiBadge}${costLabel}</div>
+            ${repoLabel ? `<div class="agent-meta">${escapeHtml(repoLabel)}</div>` : ""}
+            <div class="agent-summary">${escapeHtml(summary)}</div>
+            ${remoteLink}
+          </div>
+        </div>`;
+    }
+
+    const deviceIcons = {
+      "macbook": "💻",
+      "mac-mini": "🖥",
+      "mac-studio": "⬛",
+      "imac": "🖥",
+      "mac-pro": "🗄",
+      "mac": "🍎",
+    };
+
+    function deviceIcon(type) {
+      return deviceIcons[type] || deviceIcons.mac;
+    }
+
+    function deviceName(type) {
+      const labels = {
+        "macbook": "MacBook",
+        "mac-mini": "Mac Mini",
+        "mac-studio": "Mac Studio",
+        "imac": "iMac",
+        "mac-pro": "Mac Pro",
+      };
+      return labels[type] || "Mac";
+    }
+
+    function renderCard(item) {
+      const node = item.node;
+      if (node.id === "unassigned") return "";
+
+      const gh = item.github || {};
+      const dtype = node.device_type || "mac";
+      const ghBadge = gh.github_ok
+        ? `<span class="badge gh-ok">GitHub ${escapeHtml(gh.github_method || "ok")}</span>`
+        : `<span class="badge gh-fail">GitHub offline</span>`;
+
+      const syncSection = item.repos && item.repos.length
+        ? `<div class="section-label">Repos on this mini</div><div class="repo-sync">${renderSyncRows(item.repos)}</div>`
+        : "";
+
+      return `
+        <article class="card">
+          <div class="card-header">
+            <div class="node-name">${deviceIcon(dtype)} ${escapeHtml(node.name)} <span class="device-type">${deviceName(dtype)}</span></div>
+            <div class="badges">
+              <span class="badge ${node.status}">${node.status}</span>
+              ${ghBadge}
+            </div>
+          </div>
+          <div class="counts">
+            <div class="count running"><div class="num">${item.running}</div><div class="label">Running</div></div>
+            <div class="count done"><div class="num">${item.completed}</div><div class="label">Done</div></div>
+            <div class="count queued"><div class="num">${item.queued}</div><div class="label">Queued</div></div>
+            <div class="count failed"><div class="num">${item.failed}</div><div class="label">Failed</div></div>
+          </div>
+          ${syncSection}
+          <div class="section-label">Agents</div>
+          <div class="agents">
+            ${(item.agents || []).length ? item.agents.map(renderAgent).join("") : '<div class="empty" style="padding:1rem">No agents yet</div>'}
+          </div>
+        </article>`;
+    }
+
+    function updateSelects(data) {
+      const repoSelect = document.getElementById("repo-select");
+      const nodeSelect = document.getElementById("node-select");
+      const repos = data.repos || [];
+      const nodes = (data.nodes || []).filter(n => n.node.id !== "unassigned");
+
+      repoSelect.innerHTML = '<option value="">— none —</option>' +
+        repos.map(r => `<option value="${escapeHtml(r.name)}">${escapeHtml(r.name)}</option>`).join("");
+
+      nodeSelect.innerHTML = '<option value="">any available</option>' +
+        nodes.map(n => `<option value="${escapeHtml(n.node.name)}">${escapeHtml(n.node.name)}</option>`).join("");
+    }
+
+    async function refresh() {
+      try {
+        const res = await fetch("/api/dashboard");
+        const data = await res.json();
+
+        const t = data.totals;
+        document.getElementById("totals").innerHTML = `
+          <div class="stat running">running<strong>${t.running}</strong></div>
+          <div class="stat done">done<strong>${t.completed}</strong></div>
+          <div class="stat queued">queued<strong>${t.queued}</strong></div>
+          <div class="stat failed">failed<strong>${t.failed}</strong></div>`;
+
+        const nodes = (data.nodes || []).filter(n => n.node.id !== "unassigned");
+        const ghOnline = nodes.filter(n => n.github && n.github.github_ok).length;
+        const ghEl = document.getElementById("github-fleet");
+        if (!nodes.length) {
+          ghEl.textContent = "GitHub — no minis";
+          ghEl.className = "github-fleet warn";
+        } else if (ghOnline === nodes.length) {
+          ghEl.textContent = `GitHub ${ghOnline}/${nodes.length} connected`;
+          ghEl.className = "github-fleet ok";
+        } else {
+          ghEl.textContent = `GitHub ${ghOnline}/${nodes.length} connected`;
+          ghEl.className = "github-fleet warn";
+        }
+
+        document.getElementById("repo-list").innerHTML = renderRepoList(data.repos || []);
+        updateSelects(data);
+
+        const grid = document.getElementById("grid");
+        const cards = nodes.map(renderCard).filter(Boolean);
+        grid.innerHTML = cards.length
+          ? cards.join("")
+          : '<div class="empty">No machines online yet.<br><br>On each Mac (Mini, MacBook, etc.):<br><code>./scripts/detect-device.sh</code><br><code>MINIFLEET_NODE_NAME=macbook-pro ./scripts/setup-worker.sh</code></div>';
+
+        document.getElementById("updated").textContent =
+          `Updated ${new Date().toLocaleTimeString()} · auto-refresh 5s · ${(data.repos||[]).length} repos registered`;
+      } catch (err) {
+        document.getElementById("updated").textContent = `Connection error: ${err.message}`;
+      }
+    }
+
+    document.getElementById("add-repo-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const toast = document.getElementById("repo-toast");
+      const fd = new FormData(e.target);
+      try {
+        const res = await fetch("/api/repos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: fd.get("name"),
+            url: fd.get("url"),
+            branch: fd.get("branch") || "main",
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Failed");
+        toast.className = "toast ok";
+        toast.textContent = `Registered ${data.name}`;
+        e.target.reset();
+        e.target.querySelector('[name=branch]').value = "main";
+        refresh();
+      } catch (err) {
+        toast.className = "toast err";
+        toast.textContent = err.message;
+      }
+    });
+
+    document.getElementById("assign-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const toast = document.getElementById("assign-toast");
+      const fd = new FormData(e.target);
+      const payload = {
+        prompt: fd.get("prompt"),
+        title: fd.get("title") || undefined,
+        repo: fd.get("repo") || undefined,
+        node_name: fd.get("node") || undefined,
+        remote: fd.get("remote") === "on",
+        loop: true,
+        loop_config: {
+          max_iterations: parseInt(fd.get("max_iterations") || "20", 10),
+          verify_command: fd.get("verify") || undefined,
+          multi_agent: fd.get("multi_agent") === "on",
+        },
+      };
+      try {
+        const res = await fetch("/api/agents", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Failed");
+        toast.className = "toast ok";
+        toast.textContent = `Queued: ${data.title}`;
+        e.target.reset();
+        refresh();
+      } catch (err) {
+        toast.className = "toast err";
+        toast.textContent = err.message;
+      }
+    });
+
+    refresh();
+    setInterval(refresh, 5000);
+  </script>
+</body>
+</html>
