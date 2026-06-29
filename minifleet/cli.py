@@ -102,9 +102,6 @@ def build_assign_payload(args: argparse.Namespace, prompt: str) -> dict:
             "cost_cap_usd": args.cost_cap,
             "completion_threshold": args.completion_threshold,
         }
-        if args.git_push:
-            loop_config["git_push"] = True
-            loop_config["git_branch_prefix"] = args.git_branch_prefix
         loop_config = {k: v for k, v in loop_config.items() if v is not None}
 
     payload = {
@@ -427,8 +424,6 @@ def cmd_show(args: argparse.Namespace) -> int:
         print(f"  summary: {a['summary']}")
     if a.get("error"):
         print(f"  error:   {a['error']}")
-    if a.get("git_branch"):
-        print(f"  branch:  {a['git_branch']}")
     return 0
 
 
@@ -523,8 +518,6 @@ def _add_loop_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--multi-agent", action="store_true", help="Worker + reviewer agents")
     p.add_argument("--cost-cap", type=float, help="Stop loop at estimated USD cap")
     p.add_argument("--completion-threshold", type=int, default=2)
-    p.add_argument("--git-push", action="store_true", help="Auto branch, commit, and push on success")
-    p.add_argument("--git-branch-prefix", default="minifleet")
 
 
 def _add_follow_args(p: argparse.ArgumentParser) -> None:

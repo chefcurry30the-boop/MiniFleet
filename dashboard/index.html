@@ -442,10 +442,6 @@
           <input type="checkbox" name="multi_agent" id="multi_agent" />
           <label for="multi_agent" style="margin:0">Multi-agent (reviewer)</label>
         </div>
-        <div class="row">
-          <input type="checkbox" name="git_push" id="git_push" />
-          <label for="git_push" style="margin:0">Git push on success</label>
-        </div>
         <label>Max iterations</label>
         <input name="max_iterations" type="number" value="20" min="1" />
         <label>Verify command</label>
@@ -525,7 +521,6 @@
       const costLabel = agent.estimated_cost_usd > 0
         ? `<span class="cost-badge">$${agent.estimated_cost_usd.toFixed(2)}</span>` : "";
       const multiBadge = agent.multi_agent ? '<span class="ma-badge">worker+reviewer</span>' : "";
-      const gitBadge = agent.git_branch ? `<span class="cost-badge">⎇ ${escapeHtml(agent.git_branch)}</span>` : "";
       const canCancel = agent.status === "running" || agent.status === "queued";
       const actions = `<div class="agent-actions">
         <button class="btn-xs" data-action="logs" data-id="${escapeHtml(agent.id)}">Logs</button>
@@ -535,7 +530,7 @@
         <div class="agent" data-agent-id="${escapeHtml(agent.id)}">
           <div class="agent-icon ${agent.status}">${icons[agent.status] || "?"}</div>
           <div>
-            <div class="agent-title">${escapeHtml(agent.title)}${agent.remote ? '<span class="rc-badge">RC</span>' : ''}${loopBadge}${multiBadge}${costLabel}${gitBadge}</div>
+            <div class="agent-title">${escapeHtml(agent.title)}${agent.remote ? '<span class="rc-badge">RC</span>' : ''}${loopBadge}${multiBadge}${costLabel}</div>
             ${repoLabel ? `<div class="agent-meta">${escapeHtml(repoLabel)}</div>` : ""}
             <div class="agent-summary">${escapeHtml(summary)}</div>
             ${remoteLink}
@@ -703,7 +698,6 @@
           max_iterations: parseInt(fd.get("max_iterations") || "20", 10),
           verify_command: fd.get("verify") || undefined,
           multi_agent: fd.get("multi_agent") === "on",
-          git_push: fd.get("git_push") === "on",
         },
       };
       try {

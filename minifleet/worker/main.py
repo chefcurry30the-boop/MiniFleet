@@ -13,10 +13,8 @@ import httpx
 
 from minifleet.device import detect_device_type, device_label
 from minifleet.health import collect_health
-from minifleet.loop.config import LoopConfig
 from minifleet.loop.runner import LoopRunner
 from minifleet.worker.executor import default_executor
-from minifleet.worker.git_push import push_job_changes
 from minifleet.worker.logs import LogSyncer
 from minifleet.worker.sync import RepoSyncer
 
@@ -114,47 +112,6 @@ class Worker:
             return Path(agent["repo_path"])
         return None
 
-    def _parse_loop_config(self, agent: dict) -> LoopConfig:
-        raw = agent.get("loop_config")
-        if isinstance(raw, dict):
-            return LoopConfig(**raw)
-        if isinstance(raw, str):
-            return LoopConfig(**json.loads(raw))
-        return LoopConfig()
-
-    async def _maybe_git_push(
-        self,
-        client: httpx.AsyncClient,
-        agent_id: str,
-        agent: dict,
-        repo_path: Path | None,
-        summary: str,
-        success: bool,
-    ) -> str:
-        if not success or not repo_path:
-            return summary
-        config = self._parse_loop_config(agent)
-        if not config.git_push:
-            return summary
-
-        ok, branch, message = await push_job_changes(
-            repo_path,
-            agent_id=agent_id,
-            title=agent.get("title", "MiniFleet job"),
-            summary=summary,
-            branch_prefix=config.git_branch_prefix,
-        )
-        patch: dict = {}
-        if branch:
-            patch["git_branch"] = branch
-        if ok:
-            patch["summary"] = f"{summary} · {message}"
-        else:
-            patch["summary"] = f"{summary} · git push failed: {message}"
-        if patch:
-            await client.patch(f"{self.coordinator_url}/api/agents/{agent_id}", json=patch)
-        return patch.get("summary", summary)
-
     async def run_agent(self, client: httpx.AsyncClient, agent: dict) -> None:
         agent_id = agent["id"]
         prompt = agent["prompt"]
@@ -236,9 +193,6 @@ class Worker:
                         "claude_session_id": result.claude_session_id,
                     },
                 )
-
-            if result and status == "completed":
-                await self._maybe_git_push(client, agent_id, agent, repo_path, summary, True)
 
             final = status if result else "failed"
             print(f"[minifleet-worker] agent {agent_id} {final}")

@@ -19,5 +19,3 @@ class LoopConfig(BaseModel):
     multi_agent: bool = Field(default=False, description="Run reviewer agent after each work iteration")
     cost_cap_usd: float | None = Field(default=None, description="Stop loop when estimated cost exceeds cap")
     cost_per_iteration_usd: float = Field(default=0.15, description="Estimated cost per iteration for tracking")
-    git_push: bool = Field(default=False, description="Auto branch, commit, and push on success")
-    git_branch_prefix: str = Field(default="minifleet", description="Branch prefix for git_push")

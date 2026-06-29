@@ -238,7 +238,6 @@ For unattended Mac Minis, set `MINIFLEET_PERMISSION_MODE=auto` (or `bypassPermis
 minifleet cancel <agent-id>          # stop queued or running job
 minifleet logs <agent-id>            # view logs (no SSH)
 minifleet logs <agent-id> --follow   # live tail from coordinator
-minifleet assign "..." --git-push    # auto branch + commit + push on success
 ```
 
 Dashboard: click any agent → live log viewer + Cancel button. Node cards show CPU / RAM / disk.
