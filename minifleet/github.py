@@ -25,6 +25,18 @@ def github_token() -> str | None:
     return os.environ.get("MINIFLEET_GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN")
 
 
+def _ssh_env() -> dict:
+    """Environment that makes ssh accept new GitHub host keys non-interactively.
+
+    StrictHostKeyChecking is an SSH option, not a git config key, so it must be
+    passed via GIT_SSH_COMMAND (not `git -c`). Harmless for HTTPS clones since
+    git never invokes ssh for them.
+    """
+    env = os.environ.copy()
+    env["GIT_SSH_COMMAND"] = "ssh -o StrictHostKeyChecking=accept-new"
+    return env
+
+
 def auth_url(url: str) -> str:
     """Inject token into HTTPS GitHub URLs for private repo access."""
     token = github_token()
@@ -86,15 +98,18 @@ async def sync_repo(
 ) -> SyncResult:
     dest.parent.mkdir(parents=True, exist_ok=True)
     clone_url = auth_url(normalize_github_url(url))
+    # Accept GitHub host keys non-interactively so unattended minis don't hang
+    # on the first SSH clone/pull waiting for a yes/no host-key prompt.
+    env = _ssh_env()
 
     if dest.exists() and (dest / ".git").exists():
-        code, out = await run_git("-C", str(dest), "fetch", "origin", branch)
+        code, out = await run_git("-C", str(dest), "fetch", "origin", branch, env=env)
         if code != 0:
             return SyncResult(name=name, ok=False, path=str(dest), branch=branch, error=out[-500:])
-        code, out = await run_git("-C", str(dest), "checkout", branch)
+        code, out = await run_git("-C", str(dest), "checkout", branch, env=env)
         if code != 0:
             return SyncResult(name=name, ok=False, path=str(dest), branch=branch, error=out[-500:])
-        code, out = await run_git("-C", str(dest), "pull", "--ff-only", "origin", branch)
+        code, out = await run_git("-C", str(dest), "pull", "--ff-only", "origin", branch, env=env)
         if code != 0:
             return SyncResult(name=name, ok=False, path=str(dest), branch=branch, error=out[-500:])
         commit = await current_commit(dest)
@@ -110,6 +125,7 @@ async def sync_repo(
         "--single-branch",
         clone_url,
         str(dest),
+        env=env,
     )
     if code != 0:
         return SyncResult(name=name, ok=False, path=str(dest), branch=branch, error=out[-500:])
@@ -129,11 +145,13 @@ async def check_github_auth() -> tuple[bool, str]:
     if not shutil.which("ssh"):
         return False, "No GITHUB_TOKEN and ssh not found"
 
+    # StrictHostKeyChecking is an SSH option, not a git config key, so
+    # `git -c StrictHostKeyChecking=accept-new` fails with "key does not
+    # contain a section". Pass it via GIT_SSH_COMMAND instead.
     code, out = await run_git(
-        "-c",
-        "StrictHostKeyChecking=accept-new",
         "ls-remote",
         "git@github.com:octocat/Hello-World.git",
+        env=_ssh_env(),
     )
     if code == 0:
         return True, "SSH key"

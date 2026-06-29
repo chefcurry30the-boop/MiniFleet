@@ -293,6 +293,16 @@ class Worker:
 
 
 def main() -> None:
+    # When launched via launchd/nohup with stdout redirected to a file, Python
+    # block-buffers stdout and the [minifleet-worker] ... lines never reach
+    # worker.log until an 8KB buffer fills. Force line buffering so registration,
+    # agent start/done, and claim-failure prints appear immediately.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(line_buffering=True)
+        except (AttributeError, ValueError):
+            pass
+
     coordinator = os.environ.get("MINIFLEET_COORDINATOR", "http://127.0.0.1:8787")
     node_name = os.environ.get("MINIFLEET_NODE_NAME")
     if not node_name:
