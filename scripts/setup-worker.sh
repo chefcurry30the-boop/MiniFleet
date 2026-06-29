@@ -20,7 +20,9 @@ fi
 DEVICE_TYPE="${MINIFLEET_DEVICE_TYPE:-$(python3 -c 'from minifleet.device import detect_device_type; print(detect_device_type())')}"
 
 echo "==> Installing MiniFleet worker: $NODE_NAME ($DEVICE_TYPE)"
-python3 -m pip install -e "$ROOT" --quiet
+if [[ -z "${MINIFLEET_SKIP_INSTALL:-}" ]]; then
+  python3 -m pip install -e "$ROOT" --quiet
+fi
 mkdir -p "$DATA_DIR"
 
 PLIST="$HOME/Library/LaunchAgents/com.minifleet.worker.plist"
@@ -34,7 +36,7 @@ cat > "$PLIST" <<EOF
   <string>com.minifleet.worker</string>
   <key>ProgramArguments</key>
   <array>
-    <string>$(which python3)</string>
+    <string>${MINIFLEET_PYTHON:-$(which python3)}</string>
     <string>-m</string>
     <string>minifleet.worker.main</string>
   </array>
@@ -52,6 +54,14 @@ cat > "$PLIST" <<EOF
     <string>$DEVICE_TYPE</string>
     <key>MINIFLEET_PERMISSION_MODE</key>
     <string>${MINIFLEET_PERMISSION_MODE:-auto}</string>
+    <key>MINIFLEET_MOCK</key>
+    <string>${MINIFLEET_MOCK:-}</string>
+    <key>MINIFLEET_CLAUDE</key>
+    <string>${MINIFLEET_CLAUDE:-}</string>
+    <key>MINIFLEET_BACKGROUND</key>
+    <string>${MINIFLEET_BACKGROUND:-}</string>
+    <key>MINIFLEET_SYNC_INTERVAL</key>
+    <string>${MINIFLEET_SYNC_INTERVAL:-300}</string>
     <key>GITHUB_TOKEN</key>
     <string>${GITHUB_TOKEN:-}</string>
     <key>PATH</key>

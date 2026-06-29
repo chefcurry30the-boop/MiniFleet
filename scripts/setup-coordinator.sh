@@ -8,7 +8,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DATA_DIR="${MINIFLEET_DATA:-$HOME/.minifleet}"
 
 echo "==> Installing MiniFleet coordinator"
-python3 -m pip install -e "$ROOT" --quiet
+if [[ -z "${MINIFLEET_SKIP_INSTALL:-}" ]]; then
+  python3 -m pip install -e "$ROOT" --quiet
+fi
 
 mkdir -p "$DATA_DIR"
 
@@ -28,7 +30,7 @@ cat > "$PLIST" <<EOF
   <string>com.minifleet.coordinator</string>
   <key>ProgramArguments</key>
   <array>
-    <string>$(which python3)</string>
+    <string>${MINIFLEET_PYTHON:-$(which python3)}</string>
     <string>-m</string>
     <string>minifleet.coordinator.main</string>
   </array>
