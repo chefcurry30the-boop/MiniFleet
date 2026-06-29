@@ -88,6 +88,8 @@ The worker pulls latest `main` from your private GitHub, then runs Claude Code i
 
 Open `http://YOUR-HEAD-MAC.local:8787` (replace with your coordinator's hostname — run `hostname` on the head Mac) or `minifleet dashboard`.
 
+<img src="docs/images/dashboard.png" alt="MiniFleet dashboard" width="100%">
+
 The dashboard shows:
 - **Fleet totals** — running / done / queued / failed
 - **GitHub status** — how many machines are connected to private GitHub
@@ -115,12 +117,38 @@ Detailed walkthroughs — start here if you're wiring up real machines:
 - Logged in: run `claude` once and `/login` (Pro, Max, Team, or Enterprise — not API key)
 - For Cowork / computer use: [Claude Desktop](https://claude.com/download) with Accessibility + Screen Recording permissions
 
-### 2. Head node (coordinator)
+### 2. One-command install
 
-Usually a Mac Mini or Mac Studio that's always on. Can also run on your MacBook for testing.
+<img src="docs/images/one-liner.png" alt="One command installs MiniFleet on any Mac" width="100%">
 
-**Full walkthrough:** [docs/SETUP-TWO-MACS.md](docs/SETUP-TWO-MACS.md) (2 MacBooks) · [docs/SETUP-MAC-MINIS.md](docs/SETUP-MAC-MINIS.md) (5 minis + MacBook)
+Run a single command on the head Mac (the one that stays on):
 
+```bash
+curl -fsSL https://raw.githubusercontent.com/chefcurry30the-boop/MiniFleet/main/scripts/install.sh \
+  | bash -s -- --role coordinator
+```
+
+Then run one command on **each** Mac Mini / MacBook / Studio you want as a worker (replace `head-mini` with your head Mac's hostname, from `hostname -s` on the head Mac):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/chefcurry30the-boop/MiniFleet/main/scripts/install.sh \
+  | bash -s -- --role worker --name mac-mini-2 --coordinator http://head-mini.local:8787
+```
+
+What it does:
+1. Clones/updates `MiniFleet` into `~/MiniFleet`
+2. Creates an isolated Python venv at `~/MiniFleet/.venv`
+3. Installs the package into the venv
+4. Registers the right macOS LaunchAgent (`com.minifleet.coordinator` or `com.minifleet.worker`)
+5. Starts the service and joins the fleet
+
+Dashboard: `http://YOUR-HEAD-MAC.local:8787`
+
+### 3. Manual install (optional)
+
+If you prefer the original steps:
+
+**Coordinator:**
 ```bash
 git clone https://github.com/chefcurry30the-boop/MiniFleet.git ~/MiniFleet
 cd ~/MiniFleet
@@ -128,31 +156,14 @@ pip3 install -e .
 ./scripts/setup-coordinator.sh
 ```
 
-Dashboard: `http://YOUR-HEAD-MAC.local:8787` — on the head Mac, run `hostname -s` to get the name (e.g. `mac-mini-head`)
-
-### 3. Worker machines (Mac Minis, MacBooks, etc.)
-
-On **each** Mac you want running agents:
-
+**Each worker:**
 ```bash
-./scripts/detect-device.sh   # see suggested name
-
 git clone https://github.com/chefcurry30the-boop/MiniFleet.git ~/MiniFleet
 cd ~/MiniFleet
 pip3 install -e .
 
-# Replace YOUR-HEAD-MAC with the head Mac's hostname (run `hostname` on that machine)
 HEAD=http://YOUR-HEAD-MAC.local:8787
-
-# Mac Mini example:
-MINIFLEET_NODE_NAME=mac-mini-1 \
-MINIFLEET_COORDINATOR=$HEAD \
-./scripts/setup-worker.sh
-
-# MacBook example:
-MINIFLEET_NODE_NAME=macbook-pro \
-MINIFLEET_COORDINATOR=$HEAD \
-./scripts/setup-worker.sh
+MINIFLEET_NODE_NAME=mac-mini-1 MINIFLEET_COORDINATOR=$HEAD ./scripts/setup-worker.sh
 ```
 
 Your MacBook can be a worker while docked — assign jobs, close the lid (if configured to not sleep on power), agents keep running.
