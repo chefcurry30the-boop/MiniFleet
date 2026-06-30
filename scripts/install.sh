@@ -140,10 +140,21 @@ if [[ "$ROLE" == "coordinator" ]]; then
   PORT="$(printf '%s' "$COORDINATOR" | sed -E 's|.*:([0-9]+).*|\1|')"
   PORT="${PORT:-8787}"
   HOST="$(hostname -s)"
+  LAN_IP="$("$PY" -c 'import socket; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); s.connect(("8.8.8.8",53)); print(s.getsockname()[0]); s.close()' 2>/dev/null || echo "")"
+  DASH_LOCAL="http://$HOST.local:$PORT"
+  DASH_IP=""
+  [[ -n "$LAN_IP" ]] && DASH_IP="http://$LAN_IP:$PORT"
   echo ""
-  echo "✓ Coordinator running. Dashboard: http://$HOST.local:$PORT"
-  echo "  On every other Mac, run the worker one-liner with:"
-  echo "    --role worker --name <mini-name> --coordinator http://$HOST.local:$PORT"
+  if [[ -n "$DASH_IP" ]]; then
+    echo "✓ Coordinator running. Dashboard: $DASH_IP"
+    echo "  (also try $DASH_LOCAL if your network supports mDNS)"
+    echo "  On every other Mac, run the worker one-liner with:"
+    echo "    --role worker --name <mini-name> --coordinator $DASH_IP"
+  else
+    echo "✓ Coordinator running. Dashboard: $DASH_LOCAL"
+    echo "  On every other Mac, run the worker one-liner with:"
+    echo "    --role worker --name <mini-name> --coordinator $DASH_LOCAL"
+  fi
 else
   if [[ -z "$NODE_NAME" ]]; then
     echo "install.sh: --name <node> is required for --role worker" >&2
@@ -152,8 +163,14 @@ else
     exit 2
   fi
   if [[ -z "$COORDINATOR" ]]; then
-    echo "install.sh: --coordinator <url> is required for --role worker (e.g. http://head-mini.local:8787)" >&2
+    echo "install.sh: --coordinator <url> is required for --role worker (e.g. http://192.168.1.10:8787)" >&2
     exit 2
+  fi
+  # Warn if the coordinator URL isn't reachable, but don't block — the Mac may come online later.
+  if ! curl -fs --connect-timeout 5 --max-time 10 "${COORDINATOR%/}/api/health" >/dev/null 2>&1; then
+    echo "install.sh: WARNING: could not reach $COORDINATOR/api/health within 10s" >&2
+    echo "  Make sure the coordinator is running and reachable from this Mac." >&2
+    echo "  If .local doesn't resolve on your network, use the head Mac's IP address." >&2
   fi
   export MINIFLEET_NODE_NAME="$NODE_NAME"
   export MINIFLEET_COORDINATOR="$COORDINATOR"

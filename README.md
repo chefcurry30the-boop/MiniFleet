@@ -86,7 +86,9 @@ The worker pulls latest `main` from your private GitHub, then runs Claude Code i
 
 ## Dashboard
 
-Open `http://YOUR-HEAD-MAC.local:8787` (replace with your coordinator's hostname — run `hostname` on the head Mac) or `minifleet dashboard`.
+Open `http://YOUR-HEAD-MAC.local:8787` (replace with your coordinator's hostname — run `hostname -s` on the head Mac) or `minifleet dashboard`.
+
+If the `.local` address doesn't load, use the head Mac's LAN IP address instead (the installer prints it, e.g. `http://192.168.1.34:8787`). Some networks block mDNS/Bonjour, which makes `.local` names fail.
 
 <img src="docs/images/dashboard.png" alt="MiniFleet dashboard" width="100%">
 
@@ -128,7 +130,7 @@ curl -fsSL https://raw.githubusercontent.com/chefcurry30the-boop/MiniFleet/main/
   | bash -s -- --role coordinator
 ```
 
-Then run one command on **each** Mac Mini / MacBook / Studio you want as a worker (replace `head-mini` with your head Mac's hostname, from `hostname -s` on the head Mac):
+Then run one command on **each** Mac Mini / MacBook / Studio you want as a worker (replace `head-mini` with your head Mac's hostname or LAN IP; use the IP if `.local` doesn't resolve on your network):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/chefcurry30the-boop/MiniFleet/main/scripts/install.sh \
@@ -142,7 +144,7 @@ What it does:
 4. Registers the right macOS LaunchAgent (`com.minifleet.coordinator` or `com.minifleet.worker`)
 5. Starts the service and joins the fleet
 
-Dashboard: `http://YOUR-HEAD-MAC.local:8787`
+Dashboard: `http://YOUR-HEAD-MAC.local:8787` — if `.local` doesn't load, use the head Mac's LAN IP (printed by the installer, e.g. `http://192.168.1.34:8787`).
 
 ### 3. Manual install (optional)
 

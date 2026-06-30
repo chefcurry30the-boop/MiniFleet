@@ -60,10 +60,19 @@ launchctl bootstrap "gui/$(id -u)" "$PLIST"
 launchctl enable "gui/$(id -u)/com.minifleet.coordinator"
 launchctl kickstart -k "gui/$(id -u)/com.minifleet.coordinator"
 
+# Figure out a reachable LAN IP; .local can fail on networks that block mDNS.
+LAN_IP="$("${MINIFLEET_PYTHON:-python3}" -c 'import socket; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); s.connect(("8.8.8.8",53)); print(s.getsockname()[0]); s.close()' 2>/dev/null || echo "")"
+HOSTNAME="$(hostname -s)"
+
 echo ""
-echo "Coordinator running at http://$(hostname -s).local:$PORT"
-echo "Dashboard:       http://$(hostname -s).local:$PORT"
+echo "Coordinator running at http://$HOSTNAME.local:$PORT"
+if [[ -n "$LAN_IP" ]]; then
+  echo "Dashboard:       http://$LAN_IP:$PORT   (use this if .local doesn't resolve)"
+else
+  echo "Dashboard:       http://$HOSTNAME.local:$PORT"
+fi
 echo "Data dir:        $DATA_DIR"
 echo ""
-echo "From your laptop, set:"
-echo "  export MINIFLEET_COORDINATOR=http://$(hostname -s).local:$PORT"
+echo "From your laptop, set one of:"
+echo "  export MINIFLEET_COORDINATOR=http://$HOSTNAME.local:$PORT"
+[[ -n "$LAN_IP" ]] && echo "  export MINIFLEET_COORDINATOR=http://$LAN_IP:$PORT"
